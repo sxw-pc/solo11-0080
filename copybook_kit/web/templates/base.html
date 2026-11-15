@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}定长契勘台{% endblock %}</title>
+<style>
+:root{--ink:#17212b;--muted:#607080;--line:#dce3ea;--paper:#f7f9fb;--accent:#0f6b5d;--bad:#9b2c2c}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+header{background:#fff;border-bottom:1px solid var(--line)}
+nav{max-width:1120px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:22px}
+nav .brand{font-weight:750;font-size:18px;letter-spacing:-.02em;color:var(--ink);text-decoration:none}
+nav .tag{color:var(--muted);font-size:12px;border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+nav .links{margin-left:auto;display:flex;gap:14px}nav a{color:var(--accent);text-decoration:none}
+main{max-width:1120px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:26px;margin:0 0 6px;letter-spacing:-.02em}h2{font-size:18px;margin:28px 0 10px}
+p.lede,.muted{color:var(--muted)}a{color:var(--accent)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+.card .label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.card .value{font-size:23px;font-weight:650;margin-top:3px}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line)}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:#eef3f6;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+tr:last-child td{border-bottom:0}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px}
+.hash{word-break:break-all;color:var(--muted)}
+.pill{display:inline-block;border-radius:999px;padding:2px 8px;font-size:12px;background:#eef3f6;border:1px solid var(--line)}
+.ok{color:var(--accent);font-weight:650}.bad{color:var(--bad);font-weight:650}.empty{color:var(--muted);font-style:italic}
+.cards{display:flex;flex-wrap:wrap;gap:8px}
+pre{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;font-size:12px}
+footer{color:var(--muted);font-size:12px;text-align:center;padding:24px}
+</style>
+</head>
+<body>
+<header><nav>
+  <a class="brand" href="/">定长契勘台</a><span class="tag">只读 · 127.0.0.1</span>
+  <span class="links"><a href="/">运行台账</a></span>
+</nav></header>
+<main>{% block content %}{% endblock %}</main>
+<footer>copybook-kit 本地复核台 · 页面资源全部内嵌，无外部请求</footer>
+</body>
+</html>

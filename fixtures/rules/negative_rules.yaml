@@ -1,0 +1,5 @@
+version: 1
+name: deliberate-negative-min-records
+limits:
+  min_records: 9999
+  max_records: 10000

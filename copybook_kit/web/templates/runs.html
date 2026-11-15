@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}运行台账 · 定长契勘台{% endblock %}
+{% block content %}
+<h1>运行台账</h1>
+<p class="lede">按下注时间倒序展示已登记运行；所有页面只读，不修改台账。</p>
+{% if runs %}
+<table><thead><tr><th>运行</th><th>状态</th><th>类型</th><th>输入</th>
+  <th>总记录</th><th>接收</th><th>拒绝</th><th>创建时间</th></tr></thead><tbody>
+{% for run in runs %}<tr>
+  <td><a href="{{ url_for('run_detail', run_id=run.run_id) }}"><code>{{ run.run_id }}</code></a></td>
+  <td><span class="{% if run.status == 'completed' %}ok{% elif run.status == 'failed' %}bad{% endif %}">{{ run.status }}</span></td>
+  <td>{{ run.kind }}</td><td>{{ run.input_name }}</td><td>{{ run.total_records }}</td>
+  <td>{{ run.accepted_records }}</td><td>{{ run.rejected_records }}</td><td class="mono">{{ run.created_at }}</td>
+</tr>{% endfor %}</tbody></table>
+{% else %}<p class="empty">台账为空。先运行 <code>python -m copybook_kit.cli run --help</code>。</p>{% endif %}
+{% endblock %}

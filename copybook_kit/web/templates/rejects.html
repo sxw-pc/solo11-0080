@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}拒绝项 · {{ run.run_id }}{% endblock %}
+{% block content %}
+<h1>拒绝项</h1>
+<p class="lede">运行 <a href="{{ url_for('run_detail', run_id=run.run_id) }}"><code>{{ run.run_id }}</code></a>
+  · 共 {{ rejects | length }} 条。每条都保留输入中的原始字节偏移与原始字节文件。</p>
+{% if rejects %}{% for reject in rejects %}
+<h2>#{{ reject.record_no }} · <code>{{ reject.codes | join(', ') }}</code></h2>
+<table><tbody>
+  <tr><th>字节偏移</th><td>{{ reject.byte_offset }}</td></tr>
+  <tr><th>记录类型</th><td>{{ reject.record_type if reject.record_type is not none else '-' }}</td></tr>
+  <tr><th>原始字节</th><td>{{ reject.raw_length }} bytes · <span class="mono hash">{{ reject.raw_sha256 }}</span></td></tr>
+  <tr><th>下载</th><td><a href="{{ url_for('reject_raw', run_id=run.run_id, reject_no=reject.reject_no) }}">{{ reject.raw_file }}</a></td></tr>
+</tbody></table>
+{% if reject.errors %}
+<h2 style="font-size:15px">解码错误</h2>
+<table><thead><tr><th>错误码</th><th>字段</th><th>说明</th></tr></thead><tbody>
+{% for error in reject.errors %}<tr><td><code>{{ error.code }}</code></td><td>{{ error.field if error.field is defined else '' }}</td><td>{{ error.message }}</td></tr>{% endfor %}
+</tbody></table>{% endif %}
+{% if reject.rule_hits %}
+<h2 style="font-size:15px">规则命中</h2>
+<table><thead><tr><th>错误码</th><th>字段</th><th>说明</th></tr></thead><tbody>
+{% for hit in reject.rule_hits %}<tr><td><code>{{ hit.code }}</code></td><td>{{ hit.field if hit.field is defined else '' }}</td><td>{{ hit.message }}</td></tr>{% endfor %}
+</tbody></table>{% endif %}
+<details style="margin:12px 0 24px"><summary>已解码部分</summary><pre>{{ reject.partial | tojson(indent=2) }}</pre></details>
+{% endfor %}{% else %}<p class="empty">这次运行没有拒绝记录。</p>{% endif %}
+{% endblock %}

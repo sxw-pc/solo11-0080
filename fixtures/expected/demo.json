@@ -1,0 +1,38 @@
+{
+  "account": {
+    "data": "account_normal.dat", "copybook": "account.cpy", "rules": "account_rules.yaml",
+    "status": "completed",
+    "counts": {"accepted_data_records": 3, "accepted_records": 3, "data_records": 3, "file_issues": 0, "rejected_records": 0, "total_records": 3},
+    "reject_codes": {}, "issues": []
+  },
+  "balance": {
+    "data": "balance_normal.dat", "copybook": "balance.cpy", "rules": "balance_rules.yaml",
+    "status": "completed",
+    "counts": {"accepted_data_records": 2, "accepted_records": 2, "data_records": 2, "file_issues": 0, "rejected_records": 0, "total_records": 2},
+    "reject_codes": {}, "issues": []
+  },
+  "customer_normal": {
+    "data": "customer_normal.dat", "copybook": "customer.cpy", "rules": "customer_rules.yaml",
+    "status": "completed",
+    "counts": {"accepted_data_records": 5, "accepted_records": 7, "data_records": 5, "file_issues": 0, "rejected_records": 0, "total_records": 7},
+    "reject_codes": {}, "issues": []
+  },
+  "customer_rejects": {
+    "data": "customer_rejects.dat", "copybook": "customer.cpy", "rules": "customer_rules.yaml",
+    "status": "completed_with_rejects",
+    "counts": {"accepted_data_records": 1, "accepted_records": 3, "data_records": 5, "file_issues": 0, "rejected_records": 4, "total_records": 7},
+    "reject_codes": {"R001_REQUIRED": 1, "R002_ENUM": 1, "R004_DATE": 1, "R008_UNIQUE": 1, "R009_CROSS_FIELD": 1}, "issues": []
+  },
+  "customer_truncated": {
+    "data": "customer_truncated.dat", "copybook": "customer.cpy", "rules": "customer_rules.yaml",
+    "status": "failed",
+    "counts": {"accepted_data_records": 5, "accepted_records": 6, "data_records": 5, "file_issues": 2, "rejected_records": 0, "total_records": 6},
+    "reject_codes": {}, "issues": ["RD002", "FL001"]
+  },
+  "negative": {
+    "data": "customer_normal.dat", "copybook": "customer.cpy", "rules": "negative_rules.yaml",
+    "status": "failed",
+    "counts": {"accepted_data_records": 7, "accepted_records": 7, "data_records": 7, "file_issues": 1, "rejected_records": 0, "total_records": 7},
+    "reject_codes": {}, "issues": ["FL003"]
+  }
+}

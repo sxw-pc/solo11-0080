@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}{{ run.run_id }} · 定长契勘台{% endblock %}
+{% block content %}
+<h1>运行详情</h1>
+<p class="lede"><code>{{ run.run_id }}</code>
+  · <span class="{% if run.status == 'completed' %}ok{% elif run.status == 'failed' %}bad{% endif %}">{{ run.status }}</span>
+  · {{ run.kind }}
+</p>
+{% set cards = [('总记录', run.total_records), ('业务记录', run.data_records), ('接收', run.accepted_records),
+                ('拒绝', run.rejected_records), ('文件级问题', run.file_issue_count)] %}
+<div class="grid">{% for label, value in cards %}
+  <div class="card"><div class="label">{{ label }}</div><div class="value">{{ value }}</div></div>
+{% endfor %}</div>
+<h2>输入与契约</h2>
+<table><tbody>
+  <tr><th>输入文件</th><td>{{ run.input_name }} <span class="muted">({{ run.input_size }} bytes)</span></td></tr>
+  <tr><th>输入 SHA-256</th><td class="mono hash">{{ run.input_sha256 }}</td></tr>
+  <tr><th>记录长度</th><td>{{ run.record_length }} · {{ run.charset }} · RECFM={{ run.recfm }}</td></tr>
+  <tr><th>copybook</th><td>{{ run.copybook_name }} <span class="mono hash">{{ run.copybook_sha256 }}</span></td></tr>
+  <tr><th>规则</th><td>{{ run.rules_name }} <span class="mono hash">{{ run.rules_sha256 }}</span></td></tr>
+  <tr><th>运行键</th><td class="mono hash">{{ run.run_key }}</td></tr>
+  <tr><th>父运行</th><td>{% if run.parent_run_id %}<a href="{{ url_for('run_detail', run_id=run.parent_run_id) }}"><code>{{ run.parent_run_id }}</code></a>{% else %}-{% endif %}</td></tr>
+</tbody></table>
+<h2>产物</h2>
+<div class="cards">
+{% for name, label in [('html','HTML 报告'),('report','Markdown 报告'),('summary','summary.json'),('profile','profile.json'),('accepted','accepted.jsonl'),('rejects','rejects.jsonl'),('layout','layout.json')] %}
+  <a class="pill" href="{{ url_for('artifact', run_id=run.run_id, name=name) }}">{{ label }}</a>
+{% endfor %}</div>
+<h2>文件级问题</h2>
+{% if issues %}
+<table><thead><tr><th>错误码</th><th>级别</th><th>偏移</th><th>记录</th><th>说明</th></tr></thead><tbody>
+{% for issue in issues %}<tr><td><code>{{ issue.code }}</code></td><td>{{ issue.severity }}</td>
+  <td>{{ issue.byte_offset if issue.byte_offset is not none else '' }}</td>
+  <td>{{ issue.record_no if issue.record_no is not none else '' }}</td><td>{{ issue.message }}</td></tr>{% endfor %}
+</tbody></table>
+{% else %}<p class="empty">无文件级问题。</p>{% endif %}
+<h2>拒绝码</h2>
+{% if reject_codes %}<div class="cards">
+{% for code, count in reject_codes.items() %}<span class="pill"><code>{{ code }}</code> × {{ count }}</span>{% endfor %}
+</div>{% else %}<p class="empty">无拒绝记录。</p>{% endif %}
+<h2>最近拒绝项</h2>
+{% if rejects %}
+<table><thead><tr><th>记录号</th><th>字节偏移</th><th>代码</th><th>原始字节</th></tr></thead><tbody>
+{% for reject in rejects[:20] %}<tr><td>{{ reject.record_no }}</td><td>{{ reject.byte_offset }}</td>
+  <td><code>{{ reject.codes | join(', ') }}</code></td>
+  <td><a href="{{ url_for('reject_raw', run_id=run.run_id, reject_no=reject.reject_no) }}">{{ reject.raw_file }}</a></td></tr>{% endfor %}
+</tbody></table>
+<p><a href="{{ url_for('rejects_page', run_id=run.run_id) }}">查看全部 {{ rejects | length }} 条拒绝项 →</a></p>
+{% else %}<p class="empty">无拒绝记录。</p>{% endif %}
+<h2>字段画像</h2>
+{% if profile and profile.fields %}
+<p class="muted">接收业务记录 {{ profile.record_count }} 条，字段路径 {{ profile.field_count }} 个。展示前 40 项。</p>
+<table><thead><tr><th>字段路径</th><th>类型</th><th>非空</th><th>空值</th><th>基数</th><th>最小</th><th>最大</th></tr></thead><tbody>
+{% for field in profile.fields[:40] %}<tr><td><code>{{ field.path }}</code></td><td>{{ field.field_type }}</td>
+  <td>{{ field.present_count }}</td><td>{{ field.null_count }}</td><td>{{ field.distinct_count }}</td>
+  <td>{{ field.minimum if field.minimum is defined else '' }}</td>
+  <td>{{ field.maximum if field.maximum is defined else '' }}</td></tr>{% endfor %}
+</tbody></table>
+{% else %}<p class="empty">无接收业务记录，画像为空。</p>{% endif %}
+<h2>血缘</h2>
+{% if children %}<ul>{% for child in children %}<li><a href="{{ url_for('run_detail', run_id=child.run_id) }}"><code>{{ child.run_id }}</code></a> · {{ child.status }}</li>{% endfor %}</ul>
+{% else %}<p class="empty">没有子运行。</p>{% endif %}
+<h2>审计事件</h2>
+<table><thead><tr><th>序号</th><th>事件</th><th>时间</th></tr></thead><tbody>
+{% for event in events %}<tr><td>{{ event.seq }}</td><td><code>{{ event.event }}</code></td><td class="mono">{{ event.created_at }}</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}

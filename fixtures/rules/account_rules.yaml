@@ -1,0 +1,34 @@
+version: 1
+name: account-demo
+limits:
+  min_records: 2
+  max_records: 10
+fields:
+  REGION:
+    required: true
+    enum: ["NA", "EU", "AP"]
+  ACCOUNT-NO:
+    required: true
+    pattern: "^[0-9]{8}$"
+  CONTACT-NAME:
+    required: true
+    pattern: "^[A-Z0-9 ]+$"
+  SCORE:
+    required: true
+    range:
+      min: "0"
+      max: "100"
+  AMOUNT:
+    required: true
+    range:
+      min: "-99999.99"
+      max: "99999.99"
+    scale: 2
+  SCORE-HISTORY:
+    range:
+      min: "0"
+      max: "9999"
+record_rules:
+  - name: account-unique
+    kind: unique_key
+    fields: [REGION, ACCOUNT-NO]

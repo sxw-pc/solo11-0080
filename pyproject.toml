@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "copybook-kit"
+version = "0.1.0"
+description = "定长契勘台：离线定长 copybook 契约摄入、校验与台账工具"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["Flask>=3.0", "PyYAML>=6.0"]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[project.scripts]
+copybook-kit = "copybook_kit.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["copybook_kit*"]
+
+[tool.setuptools.package-data]
+"copybook_kit.web" = ["templates/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

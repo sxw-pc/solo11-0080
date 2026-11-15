@@ -1,0 +1,63 @@
+version: 1
+name: customer-master-demo
+record_type:
+  field: REC-TYPE
+  data: D
+  header: H
+  trailer: T
+trailer:
+  count_field: OPEN-DATE
+  amount_field: BALANCE
+limits:
+  min_records: 1
+  max_records: 100
+fields:
+  REC-TYPE:
+    required: true
+    enum: ["D"]
+  CUSTOMER-ID:
+    required: true
+    pattern: "^CUST[0-9]{6}$"
+  CUSTOMER-NAME:
+    required: true
+    pattern: "^[A-Z0-9 ]+$"
+  OPEN-DATE:
+    required: true
+    date_format: "%Y%m%d"
+    range:
+      min: "20200101"
+      max: "20261231"
+  STATUS:
+    required: true
+    enum: ["A", "I"]
+  BALANCE:
+    required: true
+    range:
+      min: "-9999999.99"
+      max: "9999999.99"
+    scale: 2
+  TAG-COUNT:
+    required: true
+    range:
+      min: "1"
+      max: "3"
+  RENEW-DATE:
+    required: true
+    date_format: "%Y%m%d"
+    range:
+      min: "20200101"
+      max: "20261231"
+  CONTROL-NO:
+    required: true
+    check_digit:
+      weights: [2, 3, 4, 5, 6]
+      modulus: 11
+record_rules:
+  - name: customer-id-unique
+    kind: unique_key
+    fields: [CUSTOMER-ID]
+  - name: renewal-not-before-open
+    kind: cross_field
+    left: OPEN-DATE
+    op: "<="
+    right: RENEW-DATE
