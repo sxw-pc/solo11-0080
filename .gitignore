@@ -6,3 +6,9 @@ dist/
 .pytest_cache/
 .coverage
 ledger.sqlite
+.venv/
+venv/
+node_modules/
+*.pyc
+.benchmarks/
+.env
