@@ -12,6 +12,7 @@ from .demo import run_demo
 from .errors import CompileError, CopybookKitError, InputError, LedgerError
 from .pipeline.options import RunOptions
 from .pipeline.runner import resume_run, run
+from .pipeline.trailer_diagnose import DATA_TRUSTED, ROUTES, TRAILER_TRUSTED, diagnose_run
 from .store.ledger import Ledger
 from .util import parse_now, pretty_json
 from .web.app import create_app
@@ -88,6 +89,22 @@ def command_serve(args: argparse.Namespace) -> int:
     create_app(args.db).run(host="127.0.0.1", port=args.port, debug=False, use_reloader=False)
     return 0
 
+def command_diagnose_trailer(args: argparse.Namespace) -> int:
+    run_row = Ledger(args.db).get_run(args.run_id)
+    if run_row is None:
+        raise LedgerError(f"run {args.run_id} not found", code="LD002")
+    routes = (TRAILER_TRUSTED,) if args.route == "trailer-trusted" else (
+        (DATA_TRUSTED,) if args.route == "data-trusted" else ROUTES)
+    payload = diagnose_run(run_row, routes=routes, node_budget=args.node_budget)
+    text = pretty_json(payload)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(text, encoding="utf-8")
+    else:
+        print(text, end="")
+    # A diagnosis is a read-only analysis report, including "insufficient evidence".
+    return 0
+
 def command_demo(args: argparse.Namespace) -> int:
     return run_demo(args.fixtures, args.out, parse_now(args.now or "2026-01-01T00:00:00Z"))
 
@@ -127,6 +144,17 @@ def build_parser() -> CliParser:
     serve.add_argument("--db", type=Path, default=DEFAULT_DB)
     serve.add_argument("--port", type=int, default=5000)
     serve.set_defaults(func=command_serve)
+    diagnose = sub.add_parser("diagnose-trailer",
+                              help="read-only offline diagnosis of an FL002 trailer mismatch")
+    diagnose.add_argument("--run-id", required=True)
+    diagnose.add_argument("--db", type=Path, default=DEFAULT_DB)
+    diagnose.add_argument("--route", choices=["both", "trailer-trusted", "data-trusted"],
+                          default="both",
+                          help="authority source: both reports stay conditional; one route commits")
+    diagnose.add_argument("--node-budget", type=int, default=200000,
+                          help="maximum subset-search nodes before reporting budget exhaustion")
+    diagnose.add_argument("--output", type=Path, help="write the diagnosis JSON here instead of stdout")
+    diagnose.set_defaults(func=command_diagnose_trailer)
     demo = sub.add_parser("demo", help="run the complete offline fixture demo")
     demo.add_argument("--fixtures", type=Path, default=Path("fixtures"))
     demo.add_argument("--out", type=Path, default=Path("build/demo"))

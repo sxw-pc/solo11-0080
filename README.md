@@ -43,6 +43,8 @@ copybook-kit run --input fixtures/data/customer_normal.dat \
 copybook-kit resume --run-id <run-id> --db build/ledger.sqlite
 copybook-kit reprocess --run-id <run-id> --rules fixtures/rules/negative_rules.yaml
 copybook-kit profile --run-id <run-id> --db build/ledger.sqlite
+copybook-kit diagnose-trailer --run-id <run-id> --db build/ledger.sqlite \
+  [--route both|trailer-trusted|data-trusted] [--node-budget 200000] [--output report.json]
 copybook-kit serve --db build/ledger.sqlite --port 5000
 copybook-kit demo
 ```
@@ -50,6 +52,15 @@ copybook-kit demo
 `validate` 输出字段树（offset/length/pic/usage/scale/occurs/redefines）、记录总长、
 warnings 与 errors；存在任何 CB 错误时退出码为 2。运行退出码：`0` 完成，
 `3` 文件级失败（截断、约束不满足），`2` CLI/契约/IO 错误。
+
+`diagnose-trailer` 是只读离线诊断，针对一次既有运行的 FL002 尾账金额不符：先核对输入、
+copybook、规则摘要与每条原始字节证据，再用正式解码器与规则引擎重放数据行、尾行及 FL002。
+任一前提不可信（金额解码失败、尾记录缺失、条数不符、源字节已变等）时结论为
+`insufficient_evidence`，不把未解释差额摊给任何记录。前提可信时给出两条均诚实、需业务确认
+权威来源的路线：`trailer-trusted` 仅允许原先无字段/记录拒绝的数据行 AMOUNT 做一次合法
+COMP-3 C/D 符号半字节翻转，报告全部最小可行集合及必然/部分嫌疑行（F 正号无法无歧义还原，
+不纳入可逆候选）；`data-trusted` 给出尾账应为的精确 Decimal 值及当前 PIC/COMP-3 宽度下是否
+可编码，不暗示任何数据行翻符号。诊断不写运行目录与台账，相同输入与路线输出字节稳定。
 
 ## 目录
 
