@@ -28,6 +28,13 @@ CODE_CATALOG = {
     "LD001": "an incomplete run with this run key already exists", "LD002": "run id not found",
     "LD003": "run key conflicts with an existing run", "IO001": "filesystem access failed",
     "CLI001": "invalid command-line argument",
+    "CE001": "correction manifest is invalid",
+    "CE002": "correction source run, input or record verification failed",
+    "CE003": "correction leaf path cannot be uniquely located",
+    "CE004": "correction value cannot be encoded into its field storage",
+    "CE005": "corrections conflict on shared byte ranges",
+    "CE006": "REDEFINES branch declaration is missing or inconsistent",
+    "CE007": "correction review or publish failed",
 }
 FATAL_FILE_CODES = frozenset({"RD002", "RD003", "FL001", "FL002", "FL003", "FL004", "FL005"})
 
@@ -94,3 +101,7 @@ class LedgerError(CopybookKitError):
 
 class InputError(CopybookKitError):
     code = "IO001"
+
+class CorrectionError(CopybookKitError):
+    def __init__(self, message: str, *, code: str = "CE001", detail: dict | None = None):
+        super().__init__(message, code=code, detail=detail)
