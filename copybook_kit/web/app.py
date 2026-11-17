@@ -9,10 +9,7 @@ from typing import Any
 from flask import Flask, abort, current_app, render_template, send_file
 
 from ..store.ledger import Ledger
-
-ARTIFACT_FIELDS = {"summary": "summary_path", "report": "report_path", "html": "html_path",
-                   "profile": "profile_path", "accepted": "accepted_path",
-                   "rejects": "rejects_path"}
+from ..store.queries import ARTIFACT_PATH_FIELDS, run_is_terminal
 
 def create_app(db_path: str | Path) -> Flask:
     app = Flask(__name__, template_folder="templates")
@@ -45,12 +42,19 @@ def create_app(db_path: str | Path) -> Flask:
                 profile = json.loads(Path(profile_path).read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 profile = None
+        terminal = run_is_terminal(run)
+        available = {"layout": terminal and (Path(run["out_dir"]) / "layout.json").is_file()}
+        for name, field in ARTIFACT_PATH_FIELDS.items():
+            text = run.get(field)
+            available[name] = terminal and bool(text) and Path(text).is_file()
+        publication = store.get_publication(run["run_key"])
         return render_template(
             "run_detail.html", run=run, issues=store.get_file_issues(run_id),
             rejects=store.get_rejects(run_id), children=store.list_children(run_id),
             events=store.get_events(run_id),
             reject_codes=json.loads(run.get("reject_codes_json") or "{}"),
-            profile=profile, nav="runs")
+            profile=profile, available=available,
+            published_run_id=publication["run_id"] if publication else None, nav="runs")
 
     @app.get("/runs/<run_id>/rejects")
     def rejects_page(run_id: str):
@@ -63,10 +67,12 @@ def create_app(db_path: str | Path) -> Flask:
     @app.get("/runs/<run_id>/artifacts/<name>")
     def artifact(run_id: str, name: str):
         run = require_run(run_id)
+        if not run_is_terminal(run):
+            abort(404)  # a staged round's half-written artifacts are never served
         if name == "layout":
             path = Path(run["out_dir"]) / "layout.json"
         else:
-            field = ARTIFACT_FIELDS.get(name)
+            field = ARTIFACT_PATH_FIELDS.get(name)
             if field is None or not run.get(field):
                 abort(404)
             path = Path(run[field])
@@ -77,6 +83,8 @@ def create_app(db_path: str | Path) -> Flask:
     @app.get("/runs/<run_id>/rejects/<int:reject_no>/raw")
     def reject_raw(run_id: str, reject_no: int):
         run = require_run(run_id)
+        if not run_is_terminal(run):
+            abort(404)
         match = next((item for item in ledger().get_rejects(run_id)
                       if item["reject_no"] == reject_no), None)
         if match is None:

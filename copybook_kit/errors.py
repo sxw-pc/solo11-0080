@@ -26,7 +26,9 @@ CODE_CATALOG = {
     "RC002": "unsafe or invalid regular expression", "RC003": "invalid rule value",
     "RC004": "rule references an unknown field",
     "LD001": "an incomplete run with this run key already exists", "LD002": "run id not found",
-    "LD003": "run key conflicts with an existing run", "IO001": "filesystem access failed",
+    "LD003": "run key conflicts with an existing run",
+    "LD004": "run artifacts failed publish verification",
+    "LD005": "ledger schema version is not supported", "IO001": "filesystem access failed",
     "CLI001": "invalid command-line argument",
 }
 FATAL_FILE_CODES = frozenset({"RD002", "RD003", "FL001", "FL002", "FL003", "FL004", "FL005"})

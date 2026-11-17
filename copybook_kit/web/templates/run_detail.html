@@ -4,8 +4,15 @@
 <h1>运行详情</h1>
 <p class="lede"><code>{{ run.run_id }}</code>
   · <span class="{% if run.status == 'completed' %}ok{% elif run.status == 'failed' %}bad{% endif %}">{{ run.status }}</span>
-  · {{ run.kind }}
+  · {{ run.kind }} · 第 {{ run.round_no }} 轮
 </p>
+{% if run.publish_state == 'published' %}
+<p class="ok">当前可复核轮次：台账与产物引用均指向本轮。</p>
+{% elif run.publish_state == 'superseded' %}
+<p class="muted">历史轮次（保留用于人工回退）。{% if published_run_id %}当前可复核轮次：<a href="{{ url_for('run_detail', run_id=published_run_id) }}"><code>{{ published_run_id }}</code></a>。{% endif %}</p>
+{% else %}
+<p class="muted">待发布：本轮尚未成为可复核结果，其产物不作为复核依据。{% if published_run_id %}当前可复核轮次：<a href="{{ url_for('run_detail', run_id=published_run_id) }}"><code>{{ published_run_id }}</code></a>。{% endif %}</p>
+{% endif %}
 {% set cards = [('总记录', run.total_records), ('业务记录', run.data_records), ('接收', run.accepted_records),
                 ('拒绝', run.rejected_records), ('文件级问题', run.file_issue_count)] %}
 <div class="grid">{% for label, value in cards %}
@@ -24,7 +31,8 @@
 <h2>产物</h2>
 <div class="cards">
 {% for name, label in [('html','HTML 报告'),('report','Markdown 报告'),('summary','summary.json'),('profile','profile.json'),('accepted','accepted.jsonl'),('rejects','rejects.jsonl'),('layout','layout.json')] %}
-  <a class="pill" href="{{ url_for('artifact', run_id=run.run_id, name=name) }}">{{ label }}</a>
+  {% if available[name] %}<a class="pill" href="{{ url_for('artifact', run_id=run.run_id, name=name) }}">{{ label }}</a>
+  {% else %}<span class="pill muted">{{ label }} · 未生成</span>{% endif %}
 {% endfor %}</div>
 <h2>文件级问题</h2>
 {% if issues %}

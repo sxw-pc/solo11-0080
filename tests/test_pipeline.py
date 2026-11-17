@@ -6,6 +6,7 @@ import json
 
 from conftest import FIXTURES, load_json
 from copybook_kit.pipeline.reader import read_records
+from copybook_kit.store.ledger import Ledger
 
 def codes(items):
     return {item.code for item in items}
@@ -87,10 +88,17 @@ def test_max_records_guard_commits_prefix_without_false_trailer_failure(run_fixt
 def test_idempotent_and_force_reruns_are_byte_stable(run_fixture, tmp_path):
     first = run_fixture()
     run_dir = tmp_path / "runs" / first.run_id
-    names = ("summary.json", "accepted.jsonl", "report.html", "profile.json")
+    names = ("accepted.jsonl", "rejects.jsonl", "profile.json", "layout.json")
     before = {name: (run_dir / name).read_bytes() for name in names}
     second = run_fixture()
     assert second.idempotent and second.run_id == first.run_id and second.counts == first.counts
     forced = run_fixture(force=True)
-    assert not forced.idempotent and forced.run_id == first.run_id
-    assert before == {name: (run_dir / name).read_bytes() for name in names}
+    assert not forced.idempotent and forced.run_id != first.run_id
+    new_dir = tmp_path / "runs" / forced.run_id
+    assert before == {name: (new_dir / name).read_bytes() for name in names}
+    assert load_json(new_dir / "summary.json")["run_id"] == forced.run_id
+    # 默认 keep 策略：上一轮目录与台账行保留，且当前可复核轮次已切换到新轮
+    assert (run_dir / "summary.json").is_file()
+    ledger = Ledger(tmp_path / "ledger.sqlite")
+    assert ledger.get_run_by_key(first.run_key)["run_id"] == forced.run_id
+    assert ledger.get_run(first.run_id)["publish_state"] == "superseded"

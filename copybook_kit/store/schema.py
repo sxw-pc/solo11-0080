@@ -7,6 +7,8 @@ from typing import Any
 
 from ..util import json_safe
 
+SCHEMA_VERSION = 2
+
 RUN_COLUMNS = (
     "run_key, run_id, kind, parent_run_id, created_at, updated_at, status, exit_code, "
     "input_path, input_name, input_sha256, input_size, copybook_path, copybook_name, "
@@ -14,12 +16,12 @@ RUN_COLUMNS = (
     "record_length, charset, recfm, max_records, out_dir, summary_path, report_path, "
     "html_path, profile_path, accepted_path, rejects_path, total_records, data_records, "
     "accepted_records, accepted_data_records, rejected_records, file_issue_count, "
-    "reject_codes_json, notes")
+    "reject_codes_json, notes, round_no, retention")
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS runs (
-    run_key TEXT PRIMARY KEY, run_id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL,
+    run_id TEXT PRIMARY KEY, run_key TEXT NOT NULL, kind TEXT NOT NULL,
     parent_run_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
     status TEXT NOT NULL, exit_code INTEGER NOT NULL DEFAULT 0,
     input_path TEXT NOT NULL, input_name TEXT NOT NULL, input_sha256 TEXT NOT NULL,
@@ -33,7 +35,12 @@ CREATE TABLE IF NOT EXISTS runs (
     accepted_records INTEGER NOT NULL DEFAULT 0, accepted_data_records INTEGER NOT NULL DEFAULT 0,
     rejected_records INTEGER NOT NULL DEFAULT 0, file_issue_count INTEGER NOT NULL DEFAULT 0,
     reject_codes_json TEXT NOT NULL DEFAULT '{}', notes TEXT,
+    round_no INTEGER NOT NULL DEFAULT 1, retention TEXT NOT NULL DEFAULT 'keep',
     FOREIGN KEY (parent_run_id) REFERENCES runs(run_id));
+CREATE TABLE IF NOT EXISTS publications (
+    run_key TEXT PRIMARY KEY, run_id TEXT NOT NULL, round_no INTEGER NOT NULL,
+    retention TEXT NOT NULL DEFAULT 'keep', published_at TEXT NOT NULL,
+    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS rejects (
     run_id TEXT NOT NULL, reject_no INTEGER NOT NULL, record_no INTEGER NOT NULL,
     byte_offset INTEGER NOT NULL, record_type TEXT, codes_json TEXT NOT NULL,
@@ -56,6 +63,7 @@ CREATE TABLE IF NOT EXISTS run_events (
     detail_json TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (run_id, seq),
     FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE);
 CREATE INDEX IF NOT EXISTS idx_runs_created ON runs(created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_key_round ON runs(run_key, round_no);
 CREATE INDEX IF NOT EXISTS idx_rejects_run ON rejects(run_id, reject_no);
 CREATE INDEX IF NOT EXISTS idx_events_run ON run_events(run_id, seq);
 """

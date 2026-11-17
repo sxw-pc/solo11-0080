@@ -8,7 +8,7 @@ from typing import Any
 
 from ..errors import LedgerError
 from .queries import LedgerQueries
-from .schema import RUN_COLUMNS, SCHEMA, dump
+from .schema import RUN_COLUMNS, SCHEMA, SCHEMA_VERSION, dump
 
 RESET_SQL = (
     "UPDATE runs SET status = 'running', updated_at = ?, exit_code = 0, total_records = 0, "
@@ -25,6 +25,11 @@ FINISH_SQL = (
     "accepted_records = ?, accepted_data_records = ?, rejected_records = ?, file_issue_count = ?, "
     "reject_codes_json = ?, summary_path = ?, report_path = ?, html_path = ?, profile_path = ?, "
     "accepted_path = ?, rejects_path = ? WHERE run_id = ?")
+PUBLISH_SQL = (
+    "INSERT INTO publications (run_key, run_id, round_no, retention, published_at) "
+    "VALUES (?, ?, ?, ?, ?) ON CONFLICT(run_key) DO UPDATE SET run_id=excluded.run_id, "
+    "round_no=excluded.round_no, retention=excluded.retention, "
+    "published_at=excluded.published_at")
 
 class Ledger(LedgerQueries):
     def __init__(self, path: str | Path) -> None:
@@ -49,8 +54,14 @@ class Ledger(LedgerQueries):
     def initialize(self) -> None:
         try:
             with self._connection() as connection:
+                version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+                if version not in (0, SCHEMA_VERSION):
+                    raise LedgerError(
+                        f"ledger {self.path} uses unsupported schema version {version} "
+                        f"(expected {SCHEMA_VERSION}); archive or remove the file and rebuild",
+                        code="LD005")
                 connection.executescript(SCHEMA)
-                connection.execute("PRAGMA user_version = 1")
+                connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         except sqlite3.Error as exc:
             raise LedgerError(f"cannot initialize ledger {self.path}: {exc}", code="IO001") from exc
 
@@ -66,6 +77,21 @@ class Ledger(LedgerQueries):
     def delete_run(self, run_id: str) -> None:
         self._write([("DELETE FROM runs WHERE run_id = ?", (run_id,))],
                     f"cannot delete run {run_id}", "LD003")
+
+    def next_round_no(self, run_key: str) -> int:
+        """Next round number for a run key; never reuses a published number."""
+        row = self._one(
+            "SELECT COALESCE(MAX(round_no), 0) AS top FROM ("
+            "SELECT round_no FROM runs WHERE run_key = ? "
+            "UNION ALL SELECT round_no FROM publications WHERE run_key = ?)",
+            (run_key, run_key))
+        return int(row["top"]) + 1
+
+    def publish_run(self, run_key: str, *, run_id: str, round_no: int, retention: str,
+                    published_at: str) -> None:
+        """Atomically switch the reviewable round of a run key (single statement)."""
+        self._write([(PUBLISH_SQL, (run_key, run_id, round_no, retention, published_at))],
+                    "cannot publish run")
 
     def reset_for_resume(self, run_id: str, updated_at: str) -> None:
         self._write([

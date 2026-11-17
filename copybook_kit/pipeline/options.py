@@ -27,6 +27,7 @@ class RunOptions:
     recfm: str = "F"
     max_records: int = 0
     force: bool = False
+    retention: str = "keep"  # keep: retain the old round as readable history; clean: remove it
     parent_run_id: str | None = None
     kind: str = "ingest"
     notes: str | None = None
@@ -61,6 +62,8 @@ def prepare_run(options: RunOptions) -> PreparedRun:
         raise InputError("--recfm must be F or FB", code="CLI001")
     if options.max_records < 0:
         raise InputError("--max-records must be non-negative", code="CLI001")
+    if options.retention not in {"keep", "clean"}:
+        raise InputError("--retention must be keep or clean", code="CLI001")
     copybook_bytes = _read(options.copybook_path, "copybook")
     try:
         copybook_source = copybook_bytes.decode("utf-8")
@@ -84,10 +87,11 @@ def prepare_run(options: RunOptions) -> PreparedRun:
     return PreparedRun(options, layout, rules, input_data, input_sha, copybook_sha,
                        rules_sha, charset, options.recfm, params, run_key, f"run-{run_key[:20]}")
 
-def run_spec(prepared: PreparedRun, out_dir: Path) -> dict[str, Any]:
+def run_spec(prepared: PreparedRun, out_dir: Path, *, run_id: str | None = None,
+             round_no: int = 1, retention: str = "keep") -> dict[str, Any]:
     options, now_text = prepared.options, utc_text(prepared.options.now)
     return {
-        "run_key": prepared.run_key, "run_id": prepared.run_id, "kind": options.kind,
+        "run_key": prepared.run_key, "run_id": run_id or prepared.run_id, "kind": options.kind,
         "parent_run_id": options.parent_run_id, "created_at": now_text, "updated_at": now_text,
         "status": "running", "exit_code": 0, "input_path": str(options.input_path.resolve()),
         "input_name": options.input_path.name, "input_sha256": prepared.input_sha256,
@@ -104,6 +108,7 @@ def run_spec(prepared: PreparedRun, out_dir: Path) -> dict[str, Any]:
         "total_records": 0, "data_records": 0, "accepted_records": 0,
         "accepted_data_records": 0, "rejected_records": 0, "file_issue_count": 0,
         "reject_codes_json": "{}", "notes": options.notes,
+        "round_no": round_no, "retention": retention,
     }
 
 def result_from_summary(summary: dict[str, Any], *, idempotent: bool) -> RunResult:

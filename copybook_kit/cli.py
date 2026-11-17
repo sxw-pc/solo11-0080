@@ -49,7 +49,8 @@ def command_run(args: argparse.Namespace) -> int:
     return _print_result(run(RunOptions(
         input_path=args.input, copybook_path=args.copybook, rules_path=args.rules,
         out_root=args.out, db_path=args.db, now=parse_now(args.now), charset=args.charset,
-        recfm=args.recfm, max_records=args.max_records, force=args.force)))
+        recfm=args.recfm, max_records=args.max_records, force=args.force,
+        retention=args.retention)))
 
 def command_resume(args: argparse.Namespace) -> int:
     return _print_result(resume_run(args.run_id, args.db, parse_now(args.now)))
@@ -106,6 +107,9 @@ def build_parser() -> CliParser:
     ingest.add_argument("--recfm", default="F", choices=["F", "FB"])
     ingest.add_argument("--max-records", type=int, default=0, help="0 disables the guard")
     ingest.add_argument("--force", action="store_true", help="replace an existing run key")
+    ingest.add_argument("--retention", choices=["keep", "clean"], default="keep",
+                        help="old-round policy once a forced rerun is published: "
+                             "keep retains readable history, clean removes old rounds")
     _add_common(ingest)
     ingest.set_defaults(func=command_run)
     resume = sub.add_parser("resume", help="resume an interrupted run")

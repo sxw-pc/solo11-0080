@@ -30,7 +30,9 @@ python -m copybook_kit.cli serve --port 5000
 | COMP-3 余额 | `balance_normal.dat` | `balance.cpy` | `completed` |
 
 每条拒绝都保留原记录与绝对字节偏移；台账记录父/子血缘，`reprocess` 可基于同一输入
-换规则重跑，`resume` 可重放中断运行。
+换规则重跑，`resume` 可重放中断运行。`--force` 重跑是可恢复的发布流程：新轮在隔离目录
+构建，旧轮保持可复核直到新轮通过发布门控并原子切换；`--retention keep`（默认）保留旧轮
+为可回读历史，`--retention clean` 在新轮发布后清理旧轮以控制磁盘。
 
 ## CLI
 

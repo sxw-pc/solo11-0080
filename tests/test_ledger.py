@@ -15,7 +15,8 @@ def test_ledger_records_terminal_run_events_checkpoint_and_queries(run_fixture, 
     assert row["input_name"] == "customer_normal.dat" and row["record_length"] == 86
     assert ledger.get_run_by_key(result.run_key)["run_id"] == result.run_id
     assert ledger.list_runs()[0]["run_id"] == result.run_id
-    assert [event["event"] for event in ledger.get_events(result.run_id)] == ["run_started", "run_finished"]
+    assert [event["event"] for event in ledger.get_events(result.run_id)] == [
+        "run_started", "run_finished", "run_published"]
     checkpoint = ledger.get_checkpoint(result.run_id)
     assert checkpoint["next_record_no"] == 8
     assert checkpoint["state"]["counts"]["accepted_records"] == 7
