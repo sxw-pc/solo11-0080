@@ -28,6 +28,9 @@ CODE_CATALOG = {
     "LD001": "an incomplete run with this run key already exists", "LD002": "run id not found",
     "LD003": "run key conflicts with an existing run", "IO001": "filesystem access failed",
     "CLI001": "invalid command-line argument",
+    "CF001": "certificate does not match the supplied input, rules or copybooks",
+    "CF002": "certificate does not reach the requested replacement level",
+    "CF003": "certificate JSON cannot be read or is structurally invalid",
 }
 FATAL_FILE_CODES = frozenset({"RD002", "RD003", "FL001", "FL002", "FL003", "FL004", "FL005"})
 

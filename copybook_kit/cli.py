@@ -8,12 +8,13 @@ import sys
 from pathlib import Path
 
 from .copybook.layout import compile_file
+from .certify import LEVELS, build_and_certify, meets_level
 from .demo import run_demo
 from .errors import CompileError, CopybookKitError, InputError, LedgerError
 from .pipeline.options import RunOptions
 from .pipeline.runner import resume_run, run
 from .store.ledger import Ledger
-from .util import parse_now, pretty_json
+from .util import parse_now, pretty_json, write_json_atomic
 from .web.app import create_app
 
 DEFAULT_DB = Path("build/ledger.sqlite")
@@ -49,7 +50,24 @@ def command_run(args: argparse.Namespace) -> int:
     return _print_result(run(RunOptions(
         input_path=args.input, copybook_path=args.copybook, rules_path=args.rules,
         out_root=args.out, db_path=args.db, now=parse_now(args.now), charset=args.charset,
-        recfm=args.recfm, max_records=args.max_records, force=args.force)))
+        recfm=args.recfm, max_records=args.max_records, force=args.force,
+        certificate_path=args.certificate, required_level=args.required_level,
+        old_copybook_path=args.old_copybook)))
+
+
+def command_certify(args: argparse.Namespace) -> int:
+    certificate = build_and_certify(
+        old_copybook_path=args.old_copybook, new_copybook_path=args.new_copybook,
+        rules_path=args.rules, input_path=args.input, charset=args.charset, recfm=args.recfm,
+        field_paths=args.field or None, requested_level=args.required_level,
+        now=parse_now(args.now))
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        write_json_atomic(args.output, certificate)
+    print(pretty_json(certificate), end="")
+    if args.required_level is not None:
+        return 0 if meets_level(certificate, args.required_level) else 2
+    return 0
 
 def command_resume(args: argparse.Namespace) -> int:
     return _print_result(resume_run(args.run_id, args.db, parse_now(args.now)))
@@ -106,8 +124,30 @@ def build_parser() -> CliParser:
     ingest.add_argument("--recfm", default="F", choices=["F", "FB"])
     ingest.add_argument("--max-records", type=int, default=0, help="0 disables the guard")
     ingest.add_argument("--force", action="store_true", help="replace an existing run key")
+    ingest.add_argument("--certificate", type=Path,
+                        help="certify-copybook JSON authorizing the new copybook")
+    ingest.add_argument("--required-level", choices=list(LEVELS),
+                        help="required certificate level; blocks the run when not reached")
+    ingest.add_argument("--old-copybook", type=Path,
+                        help="the replaced copybook referenced by the certificate")
     _add_common(ingest)
     ingest.set_defaults(func=command_run)
+    certify = sub.add_parser(
+        "certify-copybook",
+        help="offline two-level certification of an old/new copybook pair against one data file")
+    certify.add_argument("--old-copybook", type=Path, required=True)
+    certify.add_argument("--new-copybook", type=Path, required=True)
+    certify.add_argument("--rules", type=Path, required=True)
+    certify.add_argument("--input", type=Path, required=True, help="read-only data file")
+    certify.add_argument("--field", action="append",
+                         help="business field path; repeatable, defaults to every old leaf")
+    certify.add_argument("--required-level", choices=list(LEVELS),
+                         help="when set, exit 2 if the certificate does not reach this level")
+    certify.add_argument("--charset", default="utf-8", choices=["utf-8", "latin-1", "cp037"])
+    certify.add_argument("--recfm", default="F", choices=["F", "FB"])
+    certify.add_argument("--output", type=Path, help="also write the certificate JSON here")
+    _add_common(certify)
+    certify.set_defaults(func=command_certify)
     resume = sub.add_parser("resume", help="resume an interrupted run")
     resume.add_argument("--run-id", required=True)
     _add_common(resume)

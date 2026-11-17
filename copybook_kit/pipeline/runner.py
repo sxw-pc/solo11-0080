@@ -12,13 +12,15 @@ from ..model import RunResult
 from ..report.html import render_html
 from ..report.markdown import render_markdown
 from ..store.ledger import Ledger
-from ..util import utc_text
+from ..util import utc_text, write_json_atomic
 from .options import PreparedRun, RunOptions, prepare_run, result_from_summary, run_spec
 from .outputs import OUTPUT_NAMES, write_artifacts
 from .process import process_run
 from .profile import build_profile
 
 TERMINAL_STATUSES = {"completed", "completed_with_rejects"}
+CERTIFICATE_ARTIFACT = "certificate.json"
+OLD_COPYBOOK_ARTIFACT = "old_copybook.cpy"
 
 def _load_summary(run: dict) -> RunResult:
     path_text = run.get("summary_path")
@@ -44,6 +46,9 @@ def _summary_result(prepared: PreparedRun, processed, generated_at: str) -> RunR
         "copybook": {"name": options.copybook_path.name, "sha256": prepared.copybook_sha256},
         "rules": {"name": options.rules_path.name, "sha256": prepared.rules_sha256},
     }
+    if prepared.certificate_summary is not None:
+        # The ledger-facing proof that this child run was authorized by a certificate.
+        contracts["certificate"] = prepared.certificate_summary
     return RunResult(prepared.run_id, prepared.run_key, processed.status, generated_at,
                      processed.counts, dict(OUTPUT_NAMES), processed.file_issues,
                      processed.reject_codes, input_meta, contracts, options.parent_run_id,
@@ -64,6 +69,23 @@ def _execute(prepared: PreparedRun, ledger: Ledger, *, run_id: str, run_dir: Pat
         result = _summary_result(prepared, processed, now)
         result.outputs = {name: str((run_dir / filename).resolve())
                           for name, filename in OUTPUT_NAMES.items()}
+        if prepared.certificate is not None:
+            # Keep the authorizing credential and the old contract bytes beside
+            # the artifacts; the original input and the parent/old run remain
+            # independently readable and re-runnable. On resume the artifacts
+            # already exist, so never copy a path onto itself.
+            cert_path = run_dir / CERTIFICATE_ARTIFACT
+            if not cert_path.exists():
+                write_json_atomic(cert_path, prepared.certificate)
+            result.outputs["certificate"] = str(cert_path.resolve())
+            old_copy_path = run_dir / OLD_COPYBOOK_ARTIFACT
+            if not old_copy_path.exists():
+                shutil.copyfile(prepared.options.old_copybook_path, old_copy_path)
+            result.outputs["old_copybook"] = str(old_copy_path.resolve())
+            known_events = {event["event"] for event in ledger.get_events(run_id)}
+            if "certificate_attached" not in known_events:
+                ledger.add_event(prepared.run_id, "certificate_attached",
+                                 prepared.certificate_summary, now)
         summary = result.to_dict()
         paths = write_artifacts(
             run_dir, layout=prepared.layout, accepted_records=processed.accepted_records,
@@ -79,6 +101,10 @@ def _execute(prepared: PreparedRun, ledger: Ledger, *, run_id: str, run_dir: Pat
             rejected_bytes=paths["rejects"].stat().st_size,
             state={"counts": processed.counts, "reject_codes": processed.reject_codes}, updated_at=now)
         outputs_abs = {name: str(path.resolve()) for name, path in paths.items()}
+        # Certificate/old-copybook artifacts are written above and must reach
+        # the ledger outputs exactly as the summary recorded them.
+        if prepared.certificate is not None:
+            outputs_abs.update(result.outputs)
         ledger.finish_run(run_id, status=processed.status, exit_code=processed.exit_code,
                           counts=processed.counts, reject_codes=processed.reject_codes,
                           outputs=outputs_abs, updated_at=now)
@@ -126,19 +152,45 @@ def resume_run(run_id: str, db_path: Path, now: datetime) -> RunResult:
         raise LedgerError(f"run {run_id} not found", code="LD002")
     if _is_terminal(existing):
         return _load_summary(existing)
+    params = json.loads(existing["params_json"])
+    certificate_path = None
+    required_level = params.get("required_level") or None
+    old_copybook_path = None
+    if required_level is not None:
+        # Re-attach the exact credential the run started with; the gate re-runs
+        # and a tampered or missing certificate blocks the resume.
+        certificate_path = Path(existing["out_dir"]) / CERTIFICATE_ARTIFACT
+        if not certificate_path.is_file():
+            raise LedgerError(f"run {run_id} lost its certificate artifact; cannot resume the "
+                              "certified child run", code="LD001")
+        old_copybook_path = Path(existing["out_dir"]) / OLD_COPYBOOK_ARTIFACT
+        if not old_copybook_path.is_file():
+            raise LedgerError(f"run {run_id} lost its old-copybook artifact; cannot resume the "
+                              "certified child run", code="LD001")
     options = RunOptions(
         input_path=Path(existing["input_path"]), copybook_path=Path(existing["copybook_path"]),
         rules_path=Path(existing["rules_path"]), out_root=Path(existing["out_dir"]).parent,
         db_path=db_path, now=now, charset=existing["charset"], recfm=existing["recfm"],
         max_records=int(existing["max_records"]), parent_run_id=existing["parent_run_id"],
-        kind=existing["kind"], notes=existing.get("notes"))
+        kind=existing["kind"], notes=existing.get("notes"),
+        certificate_path=certificate_path, required_level=required_level,
+        old_copybook_path=old_copybook_path)
     prepared = prepare_run(options)
     if prepared.run_key != existing["run_key"]:
         raise LedgerError("inputs or rules changed since the interrupted run; start a new run", code="LD003")
     ledger.reset_for_resume(run_id, utc_text(now))
     ledger.add_event(run_id, "run_resumed", {}, utc_text(now))
     run_dir = Path(existing["out_dir"])
+    preserved: dict[str, bytes] = {}
+    if required_level is not None:
+        # The run directory is wiped below; preserve the sealed credential and
+        # old contract so the gate artifacts survive the replay.
+        for name in (CERTIFICATE_ARTIFACT, OLD_COPYBOOK_ARTIFACT):
+            preserved[name] = (run_dir / name).read_bytes()
     if run_dir.exists():
         shutil.rmtree(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    for name, content in preserved.items():
+        (run_dir / name).write_bytes(content)
     return _execute(prepared, ledger, run_id=run_id, run_dir=run_dir,
                     created_at=existing["created_at"])

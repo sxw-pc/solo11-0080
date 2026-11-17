@@ -65,3 +65,24 @@ limits: {min_records: 1, max_records: 100}
 | 规则契约 | `RC001` schema、`RC002` 正则、`RC003` 值类型/范围、`RC004` 未知字段 |
 | 读取/解码 | `RD001` 字符集、`RD002` 截断、`RD003` 空文件、`RD004` 记录上限；`DE001` DISPLAY、`DE002` COMP-3、`DE003` 空值策略 |
 | 台账/IO/CLI | `LD001` 未完成同键运行、`LD002` 运行不存在、`LD003` 键冲突；`IO001`；`CLI001` |
+| 替换凭证 | `CF001` 凭证与输入/规则/copybook 字节失配、`CF002` 未达请求等级或门禁参数缺失、`CF003` 凭证 JSON 损坏或摘要不符 |
+
+## copybook 替换凭证（certify-copybook）
+
+凭证回答一个业务问题：旧规则下已接收的原始记录，指定业务字段路径在新布局下是否仍解码为
+同一值，且记录边界、偏移、字符集、Decimal scale、OCCURS 下标、REDEFINES 共用存储未被静默
+换义。凭证 JSON 由覆盖全部声明的 `digest` 封缄，含两份 copybook、规则与输入的 SHA-256、
+两级判定、逐字段字节证据与可复核反例。
+
+- `file-reuse`（本文件可复用）：用两版布局逐条解释本次字节并比较指定路径业务值。旧版拒绝
+  记录进入 `legacy_rejects` 单列隔离，绝不伪装成兼容通过；新解码失败或值变化给出记录号、
+  字段路径、旧/新字节范围、字段十六进制与输入摘要。只授权这一份归档文件。
+- `universal`（通用可替换）：对旧布局允许的全部字段字节做静态等价证明，不枚举输入、不把
+  样本当证明。同存储同 PIC 同字符集判 `pass`；类别/USAGE/scale/偏移变化给出构造性反例判
+  `reject`；REDEFINES 共用存储等无法静态证明的情形判 `unknown`，绝不默认通过。授权未来同
+  契约文件无重采集切换解析。
+
+两个等级互不替对方背书。`run` 带 `--certificate/--required-level/--old-copybook` 时由入口
+门禁校验：未达等级抛 `CF002` 阻止新子运行，材料或摘要失配抛 `CF001`/`CF003`；通过时子运行
+台账记录 `certificate_attached` 事件并在运行目录保存 `certificate.json` 与 `old_copybook.cpy`。
+不带凭证的普通 run/reprocess 保持历史行为，run_key 不含凭证字段。
