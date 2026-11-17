@@ -40,7 +40,7 @@ class RuleEngine:
                 hits.extend(validate_field(record, path, value, rule))
         for rule in self.rules.record_rules:
             if rule.kind == "cross_field":
-                hit = cross_hit(record, rule)
+                hit = cross_hit(record, rule, self.rules.cross_bindings.get(rule.name))
                 if hit is not None:
                     hits.append(hit)
         return hits or unique_checks(record, self.rules, state)

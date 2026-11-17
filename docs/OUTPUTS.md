@@ -29,6 +29,23 @@ Decimal 输出为字符串；重复运行同一输入时内容逐字节一致。
 - `reject_codes`：按码排序的计数，例如 `{"R008_UNIQUE": 1}`。
 - 退出码：`0` 正常完成（含隔离拒绝），`3` 文件级失败，`2` CLI/契约/IO 错误。
 
+## 规则命中证据
+
+`rejects.jsonl` 的每行含 `rule_hits`；`R009_CROSS_FIELD`（OCCURS 对齐比较）的 `detail`
+保留可复核的完整结构：
+
+- `rule` / `quantifier` / `op` / `left` / `right`：规则名、量词（`all_aligned`、
+  `any_aligned`，旧单值规则为 `null`）、运算符与两侧叶子名。
+- `coordinates`：本次规则参与的全部 OCCURS 坐标元组。
+- `comparisons`：每个有定义分期的 `coord`、正式解码字段路径（如 `PAIR[1].LOW`）、
+  文件绝对字节偏移、原始字节证据 sha8、两侧标量文本与 `held` 布尔结论。
+- `missing`：缺值或解码失败分期的坐标、`missing_side`（`left`/`right`/`both`）、
+  解码错误码（如 `DE002`）、路径、字节偏移与证据哈希；缺值不计入成功比较。
+- `witness`：决定接收结论的见证位置，`kind` 为 `comparison` 或 `missing`。
+
+所有偏移均为相对文件起点的绝对字节偏移，可直接索引 `rejects/record-NNNNNNNN.bin`
+（减去该行的 `byte_offset`）或原始输入文件；reprocess 子运行与只读复核台读取同一结构。
+
 ## 幂等键与台账
 
 `run_key = SHA-256(canonical_json(params))`，params 包含输入、copybook、规则三份内容的

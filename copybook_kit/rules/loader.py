@@ -8,8 +8,9 @@ from typing import Any
 
 from ..errors import RulesError
 from ..model import Layout
-from .schema import (CROSS_OPS, RECORD_TYPES, FieldRule, RecordRule, RecordTypeRule,
-                     RuleSet, TrailerRule, field_rule, parse_yaml)
+from .binding import compile_cross_binding
+from .schema import (CROSS_OPS, CROSS_QUANTIFIERS, CROSS_FIELD_KEYS, RECORD_TYPES, FieldRule,
+                     RecordRule, RecordTypeRule, RuleSet, TrailerRule, field_rule, parse_yaml)
 
 def _record_rule(index: int, config: Any) -> RecordRule:
     if not isinstance(config, dict):
@@ -20,7 +21,7 @@ def _record_rule(index: int, config: Any) -> RecordRule:
     name = config.get("name") or f"{kind}-{index + 1}"
     if not isinstance(name, str) or not name:
         raise RulesError(f"record_rules[{index}].name must be a non-empty string", code="RC003")
-    allowed = {"kind", "name", "fields"} if kind == "unique_key" else {"kind", "name", "left", "op", "right"}
+    allowed = {"kind", "name", "fields"} if kind == "unique_key" else CROSS_FIELD_KEYS
     if set(config) - allowed:
         raise RulesError(f"record_rules[{index}] has unknown keys")
     if kind == "unique_key":
@@ -31,7 +32,17 @@ def _record_rule(index: int, config: Any) -> RecordRule:
     left, op, right = config.get("left"), config.get("op"), config.get("right")
     if not isinstance(left, str) or not isinstance(right, str) or op not in CROSS_OPS:
         raise RulesError(f"record_rules[{index}] needs left, right and op in {sorted(CROSS_OPS)}", code="RC003")
-    return RecordRule(name=name, kind=kind, left=left, op=op, right=right)
+    left_path, right_path = config.get("left_path"), config.get("right_path")
+    for label, value in (("left_path", left_path), ("right_path", right_path)):
+        if value is not None and (not isinstance(value, str) or not value):
+            raise RulesError(f"record_rules[{index}].{label} must be a non-empty string", code="RC003")
+    quantifier = config.get("quantifier")
+    if quantifier is not None and quantifier not in CROSS_QUANTIFIERS:
+        raise RulesError(
+            f"record_rules[{index}].quantifier must be one of {sorted(CROSS_QUANTIFIERS)}",
+            code="RC003")
+    return RecordRule(name=name, kind=kind, left=left, op=op, right=right,
+                      left_path=left_path, right_path=right_path, quantifier=quantifier)
 
 def _record_type(config: Any) -> RecordTypeRule:
     if not isinstance(config, dict) or set(config) - {"field", "data", "header", "trailer"}:
@@ -80,9 +91,19 @@ def _validate_against_layout(rules: RuleSet, layout: Layout) -> None:
             except InvalidOperation:
                 pass
     for rule in rules.record_rules:
-        for name in rule.fields or (rule.left, rule.right):
+        if rule.kind == "unique_key":
+            for name in rule.fields:
+                if name and name not in leaves:
+                    raise RulesError(f"record rule {rule.name} references unknown field {name}", code="RC004")
+            continue
+        # cross_field: names must exist; the binding compiler then resolves the
+        # OCCURS coordinates, broadcasts and ambiguity cases with stable errors.
+        for name in (rule.left, rule.right):
             if name and name not in leaves:
                 raise RulesError(f"record rule {rule.name} references unknown field {name}", code="RC004")
+        rules.cross_bindings[rule.name] = compile_cross_binding(
+            layout, rule.name, rule.op or "==", rule.quantifier,
+            rule.left or "", rule.right or "", rule.left_path, rule.right_path)
     if rules.record_type and rules.record_type.field not in leaves:
         raise RulesError(f"record_type.field references unknown field {rules.record_type.field}", code="RC004")
     for label, name in (("count_field", rules.trailer and rules.trailer.count_field),
@@ -116,12 +137,18 @@ def load_rules(path: str | Path, layout: Layout | None = None) -> RuleSet:
     raw_record_rules = data.get("record_rules", [])
     if not isinstance(raw_record_rules, list):
         raise RulesError("record_rules must be a list")
+    record_rules = tuple(_record_rule(i, item) for i, item in enumerate(raw_record_rules))
+    duplicate_names = {rule.name for rule in record_rules
+                       if sum(other.name == rule.name for other in record_rules) > 1}
+    if duplicate_names:
+        raise RulesError(
+            f"record_rules names must be unique; duplicates: {sorted(duplicate_names)}", code="RC003")
     record_type = _record_type(data["record_type"]) if "record_type" in data else None
     trailer = _trailer(data["trailer"]) if "trailer" in data else None
     if trailer and (record_type is None or record_type.trailer is None):
         raise RulesError("trailer rules require record_type.trailer")
     minimum, maximum = _limits(data.get("limits", {}))
-    rules = RuleSet(name, version, fields, tuple(_record_rule(i, item) for i, item in enumerate(raw_record_rules)),
+    rules = RuleSet(name, version, fields, record_rules,
                     record_type, trailer, minimum, maximum, blanks)
     if layout is not None:
         _validate_against_layout(rules, layout)

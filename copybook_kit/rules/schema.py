@@ -15,6 +15,8 @@ MAX_RULE_BYTES, MAX_PATTERN_LENGTH = 512 * 1024, 200
 TOP_KEYS = {"version", "name", "record_type", "trailer", "limits", "fields", "record_rules"}
 FIELD_KEYS = {"required", "enum", "range", "date_format", "pattern", "check_digit", "scale", "blank"}
 RECORD_TYPES, CROSS_OPS = {"unique_key", "cross_field"}, {"<=", "<", "==", "!="}
+CROSS_QUANTIFIERS = {"all_aligned", "any_aligned"}
+CROSS_FIELD_KEYS = {"kind", "name", "left", "op", "right", "left_path", "right_path", "quantifier"}
 
 @dataclass(frozen=True)
 class CheckDigitRule:
@@ -32,6 +34,10 @@ class RecordRule:
     name: str; kind: str
     fields: tuple[str, ...] = (); left: str | None = None
     op: str | None = None; right: str | None = None
+    # Explicit OCCURS path selectors (e.g. "PAIR[*].LOW") and the aligned
+    # quantifier; None preserves the legacy single-value cross-field semantics.
+    left_path: str | None = None; right_path: str | None = None
+    quantifier: str | None = None
 
 @dataclass(frozen=True)
 class RecordTypeRule:
@@ -50,6 +56,9 @@ class RuleSet:
     record_type: RecordTypeRule | None = None; trailer: TrailerRule | None = None
     min_records: int | None = None; max_records: int | None = None
     blank_policies: dict[str, str] = dc_field(default_factory=dict)
+    # rule name -> layout-bound alignment plan; populated by load_rules when a
+    # compiled Layout is supplied and empty for layout-free legacy contracts.
+    cross_bindings: dict[str, Any] = dc_field(default_factory=dict)
 
 class _UniqueSafeLoader(yaml.SafeLoader):
     pass

@@ -12,7 +12,7 @@
 ```bash
 python -m pip install -e .
 make demo          # 六个场景走完 编译 -> 解码 -> 校验 -> 台账 -> 报告
-pytest -q          # 84 个测试，含黄金样例与逐字节复现检查
+pytest -q          # 117 个测试，含黄金样例与逐字节复现检查
 python -m copybook_kit.cli serve --port 5000
 ```
 
@@ -30,7 +30,9 @@ python -m copybook_kit.cli serve --port 5000
 | COMP-3 余额 | `balance_normal.dat` | `balance.cpy` | `completed` |
 
 每条拒绝都保留原记录与绝对字节偏移；台账记录父/子血缘，`reprocess` 可基于同一输入
-换规则重跑，`resume` 可重放中断运行。
+换规则重跑，`resume` 可重放中断运行。`cross_field` 在 OCCURS 分期上按完整坐标对齐，
+支持 `all_aligned` / `any_aligned` 量词、标量广播与装载期歧义拒绝，详见
+[docs/CONTRACT.md](docs/CONTRACT.md)。
 
 ## CLI
 
