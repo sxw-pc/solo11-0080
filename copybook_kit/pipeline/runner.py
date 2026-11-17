@@ -44,11 +44,14 @@ def _summary_result(prepared: PreparedRun, processed, generated_at: str) -> RunR
         "copybook": {"name": options.copybook_path.name, "sha256": prepared.copybook_sha256},
         "rules": {"name": options.rules_path.name, "sha256": prepared.rules_sha256},
     }
+    if options.unique_policy != "sequential" or options.unique_score_field is not None:
+        # Sequential default keeps its historical summary bytes untouched.
+        contracts["unique_selection"] = {"policy": options.unique_policy,
+                                         "score_field": options.unique_score_field}
     return RunResult(prepared.run_id, prepared.run_key, processed.status, generated_at,
                      processed.counts, dict(OUTPUT_NAMES), processed.file_issues,
                      processed.reject_codes, input_meta, contracts, options.parent_run_id,
-                     processed.exit_code)
-
+                     processed.exit_code, unique_selection=processed.unique_selection)
 def _execute(prepared: PreparedRun, ledger: Ledger, *, run_id: str, run_dir: Path,
              created_at: str) -> RunResult:
     now = utc_text(prepared.options.now)
@@ -131,7 +134,11 @@ def resume_run(run_id: str, db_path: Path, now: datetime) -> RunResult:
         rules_path=Path(existing["rules_path"]), out_root=Path(existing["out_dir"]).parent,
         db_path=db_path, now=now, charset=existing["charset"], recfm=existing["recfm"],
         max_records=int(existing["max_records"]), parent_run_id=existing["parent_run_id"],
-        kind=existing["kind"], notes=existing.get("notes"))
+        kind=existing["kind"], notes=existing.get("notes"),
+        unique_policy=existing.get("unique_policy", "sequential"),
+        unique_score_field=existing.get("unique_score_field"),
+        unique_max_component=int(existing.get("unique_max_component", 18)),
+        unique_proof_budget=int(existing.get("unique_proof_budget", 2_000_000)))
     prepared = prepare_run(options)
     if prepared.run_key != existing["run_key"]:
         raise LedgerError("inputs or rules changed since the interrupted run; start a new run", code="LD003")

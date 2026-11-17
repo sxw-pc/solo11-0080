@@ -50,9 +50,23 @@ class Ledger(LedgerQueries):
         try:
             with self._connection() as connection:
                 connection.executescript(SCHEMA)
+                self._migrate(connection)
                 connection.execute("PRAGMA user_version = 1")
         except sqlite3.Error as exc:
             raise LedgerError(f"cannot initialize ledger {self.path}: {exc}", code="IO001") from exc
+
+    @staticmethod
+    def _migrate(connection: sqlite3.Connection) -> None:
+        """Add selection-contract columns to ledgers created before this contract."""
+
+        existing = {row["name"] for row in connection.execute("PRAGMA table_info(runs)")}
+        for column, ddl in (
+                ("unique_policy", "TEXT NOT NULL DEFAULT 'sequential'"),
+                ("unique_score_field", "TEXT"),
+                ("unique_max_component", "INTEGER NOT NULL DEFAULT 18"),
+                ("unique_proof_budget", "INTEGER NOT NULL DEFAULT 2000000")):
+            if column not in existing:
+                connection.execute(f"ALTER TABLE runs ADD COLUMN {column} {ddl}")
 
     def insert_run(self, spec: dict[str, Any]) -> None:
         columns = [item.strip() for item in RUN_COLUMNS.split(",")]

@@ -11,7 +11,8 @@ RUN_COLUMNS = (
     "run_key, run_id, kind, parent_run_id, created_at, updated_at, status, exit_code, "
     "input_path, input_name, input_sha256, input_size, copybook_path, copybook_name, "
     "copybook_sha256, rules_path, rules_name, rules_sha256, params_json, params_sha256, "
-    "record_length, charset, recfm, max_records, out_dir, summary_path, report_path, "
+    "record_length, charset, recfm, max_records, unique_policy, unique_score_field, "
+    "unique_max_component, unique_proof_budget, out_dir, summary_path, report_path, "
     "html_path, profile_path, accepted_path, rejects_path, total_records, data_records, "
     "accepted_records, accepted_data_records, rejected_records, file_issue_count, "
     "reject_codes_json, notes")
@@ -27,7 +28,10 @@ CREATE TABLE IF NOT EXISTS runs (
     copybook_sha256 TEXT NOT NULL, rules_path TEXT NOT NULL, rules_name TEXT NOT NULL,
     rules_sha256 TEXT NOT NULL, params_json TEXT NOT NULL, params_sha256 TEXT NOT NULL,
     record_length INTEGER NOT NULL, charset TEXT NOT NULL, recfm TEXT NOT NULL,
-    max_records INTEGER NOT NULL, out_dir TEXT NOT NULL, summary_path TEXT, report_path TEXT,
+    max_records INTEGER NOT NULL, unique_policy TEXT NOT NULL DEFAULT 'sequential',
+    unique_score_field TEXT, unique_max_component INTEGER NOT NULL DEFAULT 18,
+    unique_proof_budget INTEGER NOT NULL DEFAULT 2000000,
+    out_dir TEXT NOT NULL, summary_path TEXT, report_path TEXT,
     html_path TEXT, profile_path TEXT, accepted_path TEXT, rejects_path TEXT,
     total_records INTEGER NOT NULL DEFAULT 0, data_records INTEGER NOT NULL DEFAULT 0,
     accepted_records INTEGER NOT NULL DEFAULT 0, accepted_data_records INTEGER NOT NULL DEFAULT 0,

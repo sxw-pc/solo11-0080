@@ -160,9 +160,10 @@ class RunResult:
     parent_run_id: str | None = None
     exit_code: int = 0
     idempotent: bool = False
+    unique_selection: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return json_safe({
+        payload = {
             "schema_version": 1, "run_id": self.run_id, "run_key": self.run_key,
             "status": self.status, "generated_at": self.generated_at,
             "input": self.input_meta, "contracts": self.contract_meta,
@@ -171,4 +172,7 @@ class RunResult:
             "reject_codes": dict(sorted(self.reject_codes.items())),
             "outputs": dict(sorted(self.outputs.items())),
             "parent_run_id": self.parent_run_id, "exit_code": self.exit_code,
-        })
+        }
+        if self.unique_selection is not None:
+            payload["unique_selection"] = self.unique_selection
+        return json_safe(payload)

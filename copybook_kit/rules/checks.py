@@ -140,9 +140,18 @@ def cross_hit(record: Record, rule: RecordRule) -> RuleHit | None:
     return _hit(record, "R009_CROSS_FIELD", f"{rule.left} {rule.op} {rule.right} failed", "record",
                 None, left=scalar_text(left), right=scalar_text(right), op=rule.op)
 
-def unique_checks(record: Record, rules: RuleSet, state: ValidationState) -> list[RuleHit]:
+def canonical_unique_keys(record: Record, rules: RuleSet) -> tuple[
+        list[tuple[str, tuple[str, ...]]], list[RuleHit]]:
+    """Return every declared unique key with the complete canonical value tuple.
+
+    A missing component makes that key unusable and yields an ``R008_UNIQUE`` hit;
+    the caller must not admit such a record into a conflict graph.  The helper has
+    no side effects, so the same canonical keys feed both the sequential state and
+    the preference-selection graph.
+    """
+
+    keys: list[tuple[str, tuple[str, ...]]] = []
     hits: list[RuleHit] = []
-    pending: list[tuple[str, tuple[str, ...]]] = []
     for rule in rules.record_rules:
         if rule.kind != "unique_key":
             continue
@@ -150,16 +159,25 @@ def unique_checks(record: Record, rules: RuleSet, state: ValidationState) -> lis
         for name in rule.fields:
             found = values_for(record, name)
             if not found or found[0][1] is None:
-                hits.append(_hit(record, "R008_UNIQUE", f"unique key {rule.name} has a missing component", "record"))
+                hits.append(_hit(record, "R008_UNIQUE",
+                                 f"unique key {rule.name} has a missing component", "record"))
                 break
             values.append(scalar_text(found[0][1]))
         else:
-            key = tuple(values)
-            if key in state.unique.get(rule.name, set()):
-                hits.append(_hit(record, "R008_UNIQUE", f"duplicate unique key for {rule.name}",
-                                 "record", None, key=key))
-            else:
-                pending.append((rule.name, key))
+            keys.append((rule.name, tuple(values)))
+    return keys, hits
+
+def unique_checks(record: Record, rules: RuleSet, state: ValidationState) -> list[RuleHit]:
+    keys, hits = canonical_unique_keys(record, rules)
+    if hits:
+        return hits
+    pending: list[tuple[str, tuple[str, ...]]] = []
+    for rule_name, key in keys:
+        if key in state.unique.get(rule_name, set()):
+            hits.append(_hit(record, "R008_UNIQUE", f"duplicate unique key for {rule_name}",
+                             "record", None, key=key))
+        else:
+            pending.append((rule_name, key))
     if hits:
         return hits
     for rule_name, key in pending:

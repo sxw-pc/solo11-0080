@@ -12,6 +12,7 @@ from .demo import run_demo
 from .errors import CompileError, CopybookKitError, InputError, LedgerError
 from .pipeline.options import RunOptions
 from .pipeline.runner import resume_run, run
+from .rules.engine import DEFAULT_MAX_COMPONENT_RECORDS, DEFAULT_PROOF_BUDGET
 from .store.ledger import Ledger
 from .util import parse_now, pretty_json
 from .web.app import create_app
@@ -49,7 +50,10 @@ def command_run(args: argparse.Namespace) -> int:
     return _print_result(run(RunOptions(
         input_path=args.input, copybook_path=args.copybook, rules_path=args.rules,
         out_root=args.out, db_path=args.db, now=parse_now(args.now), charset=args.charset,
-        recfm=args.recfm, max_records=args.max_records, force=args.force)))
+        recfm=args.recfm, max_records=args.max_records, force=args.force,
+        unique_policy=args.unique_policy, unique_score_field=args.unique_score_field,
+        unique_max_component=args.unique_max_component,
+        unique_proof_budget=args.unique_proof_budget)))
 
 def command_resume(args: argparse.Namespace) -> int:
     return _print_result(resume_run(args.run_id, args.db, parse_now(args.now)))
@@ -106,6 +110,15 @@ def build_parser() -> CliParser:
     ingest.add_argument("--recfm", default="F", choices=["F", "FB"])
     ingest.add_argument("--max-records", type=int, default=0, help="0 disables the guard")
     ingest.add_argument("--force", action="store_true", help="replace an existing run key")
+    ingest.add_argument("--unique-policy", default="sequential",
+                        choices=["sequential", "prefer_combination"],
+                        help="sequential keeps first-come wins; prefer_combination needs a score field")
+    ingest.add_argument("--unique-score-field", default=None,
+                        help="decoded numeric field used as the quality score in prefer_combination")
+    ingest.add_argument("--unique-max-component", type=int, default=DEFAULT_MAX_COMPONENT_RECORDS,
+                        help="components larger than this stay undetermined")
+    ingest.add_argument("--unique-proof-budget", type=int, default=DEFAULT_PROOF_BUDGET,
+                        help="exhaustive search node budget per component")
     _add_common(ingest)
     ingest.set_defaults(func=command_run)
     resume = sub.add_parser("resume", help="resume an interrupted run")

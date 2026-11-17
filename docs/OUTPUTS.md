@@ -28,12 +28,18 @@ Decimal 输出为字符串；重复运行同一输入时内容逐字节一致。
   `rejected_records`、`file_issues`。
 - `reject_codes`：按码排序的计数，例如 `{"R008_UNIQUE": 1}`。
 - 退出码：`0` 正常完成（含隔离拒绝），`3` 文件级失败，`2` CLI/契约/IO 错误。
+- `unique_selection`：仅 `prefer_combination` 合同出现，含 `final`/`status`、
+  每个连通分量的 `selected`/`selected_total_score`/`rejected`/`conflict_edges` 与
+  分支定界证据（`search_nodes`、`bound_prunes`、`root_upper_bound`、`proof_budget`）。
+  `final=false` 表示存在未定分量，此时不发布该分量的胜者。
 
 ## 幂等键与台账
 
 `run_key = SHA-256(canonical_json(params))`，params 包含输入、copybook、规则三份内容的
 SHA-256，以及字符集、RECFM、记录上限、父运行 ID、运行类型。`run_id = "run-" + run_key[:20]`。
 同一组合再次提交会返回既有 `summary.json`，结果标记 `idempotent=true`；`--force` 才会删除旧运行重做。
+可选参数 `unique_policy` / `unique_score_field` / `unique_max_component` /
+`unique_proof_budget` 只在非默认合同下写入 params；默认 `sequential` 合同的运行键保持历史值。
 若运行尚未完成，`run` 报 `LD001` 并提示使用 `resume`。
 
 SQLite 表：

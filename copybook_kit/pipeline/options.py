@@ -11,6 +11,9 @@ from ..copybook.layout import compile_copybook
 from ..decode.charset import normalize_charset
 from ..errors import CompileError, InputError
 from ..model import FileIssue, Layout, RunResult
+from ..rules.engine import (DEFAULT_MAX_COMPONENT_RECORDS, DEFAULT_PROOF_BUDGET,
+                            DEFAULT_SCORE_FIELD, PREFER_COMBINATION_POLICY,
+                            SEQUENTIAL_POLICY, UNIQUE_POLICIES)
 from ..rules.loader import load_rules
 from ..rules.schema import RuleSet
 from ..util import canonical_json, sha256_bytes, sha256_text, utc_text
@@ -30,6 +33,12 @@ class RunOptions:
     parent_run_id: str | None = None
     kind: str = "ingest"
     notes: str | None = None
+    # Unique-key contract identity.  Sequential is the historical default;
+    # prefer_combination needs an explicitly authorized score field.
+    unique_policy: str = SEQUENTIAL_POLICY
+    unique_score_field: str | None = None
+    unique_max_component: int = DEFAULT_MAX_COMPONENT_RECORDS
+    unique_proof_budget: int = DEFAULT_PROOF_BUDGET
 
 @dataclass
 class PreparedRun:
@@ -61,6 +70,18 @@ def prepare_run(options: RunOptions) -> PreparedRun:
         raise InputError("--recfm must be F or FB", code="CLI001")
     if options.max_records < 0:
         raise InputError("--max-records must be non-negative", code="CLI001")
+    if options.unique_policy not in UNIQUE_POLICIES:
+        raise InputError(f"--unique-policy must be one of {list(UNIQUE_POLICIES)}", code="CLI001")
+    if options.unique_policy == PREFER_COMBINATION_POLICY and not options.unique_score_field:
+        raise InputError("--unique-policy prefer_combination requires --unique-score-field",
+                         code="CLI001")
+    if options.unique_policy == SEQUENTIAL_POLICY and options.unique_score_field is not None:
+        raise InputError("--unique-score-field is only meaningful with "
+                         "--unique-policy prefer_combination", code="CLI001")
+    if options.unique_max_component <= 0:
+        raise InputError("--unique-max-component must be positive", code="CLI001")
+    if options.unique_proof_budget <= 0:
+        raise InputError("--unique-proof-budget must be positive", code="CLI001")
     copybook_bytes = _read(options.copybook_path, "copybook")
     try:
         copybook_source = copybook_bytes.decode("utf-8")
@@ -70,6 +91,10 @@ def prepare_run(options: RunOptions) -> PreparedRun:
     if not layout.valid:
         raise CompileError(layout.errors)
     rules = load_rules(options.rules_path, layout)
+    if options.unique_policy == PREFER_COMBINATION_POLICY:
+        if options.unique_score_field not in layout.elementary_names():
+            raise InputError(f"--unique-score-field {options.unique_score_field!r} is not an "
+                             "elementary field in the copybook", code="CLI001")
     input_data = _read(options.input_path, "input file")
     rules_bytes = _read(options.rules_path, "rules")
     input_sha, copybook_sha, rules_sha = map(
@@ -80,6 +105,14 @@ def prepare_run(options: RunOptions) -> PreparedRun:
         "max_records": options.max_records, "parent_run_id": options.parent_run_id or "",
         "kind": options.kind,
     }
+    if options.unique_policy != SEQUENTIAL_POLICY or options.unique_score_field is not None:
+        # Different unique-key contracts must never share a run key.  Sequential
+        # mode without a score field omits these keys entirely so historical run
+        # keys (and therefore historical artifacts) stay byte-identical.
+        params["unique_policy"] = options.unique_policy
+        params["unique_score_field"] = options.unique_score_field or ""
+        params["unique_max_component"] = options.unique_max_component
+        params["unique_proof_budget"] = options.unique_proof_budget
     run_key = sha256_text(canonical_json(params))
     return PreparedRun(options, layout, rules, input_data, input_sha, copybook_sha,
                        rules_sha, charset, options.recfm, params, run_key, f"run-{run_key[:20]}")
@@ -99,6 +132,9 @@ def run_spec(prepared: PreparedRun, out_dir: Path) -> dict[str, Any]:
         "params_sha256": sha256_text(canonical_json(prepared.params)),
         "record_length": prepared.layout.record_length, "charset": prepared.charset,
         "recfm": prepared.recfm, "max_records": options.max_records,
+        "unique_policy": options.unique_policy, "unique_score_field": options.unique_score_field,
+        "unique_max_component": options.unique_max_component,
+        "unique_proof_budget": options.unique_proof_budget,
         "out_dir": str(out_dir.resolve()), "summary_path": None, "report_path": None,
         "html_path": None, "profile_path": None, "accepted_path": None, "rejects_path": None,
         "total_records": 0, "data_records": 0, "accepted_records": 0,
@@ -110,10 +146,11 @@ def result_from_summary(summary: dict[str, Any], *, idempotent: bool) -> RunResu
     issues = [FileIssue(item["code"], item["message"], item.get("severity", "error"),
                         item.get("byte_offset"), item.get("record_no"), item.get("detail", {}))
               for item in summary.get("file_issues", [])]
+    contract_meta = summary.get("contracts", {})
     return RunResult(
         summary["run_id"], summary["run_key"], summary["status"], summary["generated_at"],
         {key: int(value) for key, value in summary.get("counts", {}).items()},
         summary.get("outputs", {}), issues, summary.get("reject_codes", {}),
-        summary.get("input", {}), summary.get("contracts", {}), summary.get("parent_run_id"),
-        int(summary.get("exit_code", 0)), idempotent,
+        summary.get("input", {}), contract_meta, summary.get("parent_run_id"),
+        int(summary.get("exit_code", 0)), idempotent, summary.get("unique_selection"),
     )

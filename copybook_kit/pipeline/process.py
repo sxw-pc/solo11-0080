@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from ..decode.record import decode_record
 from ..errors import FATAL_FILE_CODES
 from ..model import FileIssue, Record
 from ..rules.checks import ValidationState
-from ..rules.engine import RuleEngine, assign_record_type
+from ..rules.engine import (PREFER_COMBINATION_POLICY, RuleEngine, UniqueSelection,
+                            assign_record_type, resolve_unique_selection)
 from ..rules.schema import RuleSet
 from .options import PreparedRun
 from .reader import read_records
@@ -27,21 +28,32 @@ class ProcessedRun:
     reject_codes: dict[str, int]
     status: str
     exit_code: int
+    unique_selection: dict[str, Any] | None = None
 
 CheckpointCallback = Callable[[int, int, dict], None]
 
 def _is_data(record: Record, rules: RuleSet) -> bool:
     return rules.record_type is None or record.record_type == rules.record_type.data
 
+def _prefer_combination(prepared: PreparedRun) -> bool:
+    return (prepared.options.unique_policy == PREFER_COMBINATION_POLICY
+            and prepared.options.unique_score_field is not None)
+
 def _snapshot(state: ValidationState) -> dict:
     return {"unique_keys": {name: [list(key) for key in sorted(keys)]
                             for name, keys in sorted(state.unique.items())}}
+
+def _snapshot_selection() -> dict:
+    """Preference mode cannot finalize until the whole file is read."""
+
+    return {"unique_selection": {"status": "pending", "final": False}}
 
 def process_run(prepared: PreparedRun, run_dir: Path,
                 checkpoint: CheckpointCallback | None = None) -> ProcessedRun:
     read = read_records(prepared.input_data, prepared.layout.record_length,
                         max_records=prepared.options.max_records, recfm=prepared.recfm)
     engine, state = RuleEngine(prepared.rules), ValidationState()
+    preference = _prefer_combination(prepared)
     records: list[Record] = []
     for raw in read.records:
         record = decode_record(prepared.layout, raw.data, record_no=raw.record_no,
@@ -49,15 +61,31 @@ def process_run(prepared: PreparedRun, run_dir: Path,
                                blank_policies=prepared.rules.blank_policies)
         assign_record_type(record, prepared.rules)
         if not record.errors:
-            record.hits = engine.validate_record(record, state)
+            # Preference mode must not commit unique state in file order; only
+            # decoding, field and cross_field checks gate the conflict graph.
+            record.hits = (engine.validate_data_record(record) if preference
+                           else engine.validate_record(record, state))
         records.append(record)
         if checkpoint and record.record_no % 25 == 0:
             checkpoint(record.record_no + 1, raw.byte_offset + prepared.layout.record_length,
-                       _snapshot(state))
+                       _snapshot_selection() if preference else _snapshot(state))
+    selection: UniqueSelection | None = None
+    if preference:
+        eligible = [record for record in records
+                    if _is_data(record, prepared.rules) and not record.errors and not record.hits]
+        selection = resolve_unique_selection(
+            eligible, prepared.rules,
+            score_field=prepared.options.unique_score_field,
+            max_component_records=prepared.options.unique_max_component,
+            proof_budget=prepared.options.unique_proof_budget)
+        by_record_no = {record.record_no: record for record in records}
+        for record_no, hit in selection.hits.items():
+            by_record_no[record_no].hits = by_record_no[record_no].hits + [hit]
     issues = list(read.file_issues)
     # The max-records guard reads a prefix; completeness checks on that prefix are false alarms.
     if not any(issue.code == "RD004" for issue in read.file_issues):
-        issues.extend(engine.validate_file(records))
+        issues.extend(engine.validate_file(
+            records, selection.report if selection is not None else None))
     if read.trailing_bytes:
         boundary = read.full_record_count * prepared.layout.record_length
         for issue in issues:
@@ -76,4 +104,6 @@ def process_run(prepared: PreparedRun, run_dir: Path,
     }
     return ProcessedRun(records, accepted, accepted_data, rejects, issues, counts,
                         reject_code_counts(rejects), "failed" if fatal else
-                        ("completed_with_rejects" if rejects else "completed"), 3 if fatal else 0)
+                        ("completed_with_rejects" if rejects else "completed"), 3 if fatal else 0,
+                        selection.report if selection is not None else None)
+
