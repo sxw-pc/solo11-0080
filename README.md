@@ -43,6 +43,9 @@ copybook-kit run --input fixtures/data/customer_normal.dat \
 copybook-kit resume --run-id <run-id> --db build/ledger.sqlite
 copybook-kit reprocess --run-id <run-id> --rules fixtures/rules/negative_rules.yaml
 copybook-kit profile --run-id <run-id> --db build/ledger.sqlite
+copybook-kit pack-run --run-id <run-id> --db build/ledger.sqlite --out run-pack.tar.gz
+copybook-kit verify-pack --pack run-pack.tar.gz --contract bytes --manifest-sha256 <hex>
+copybook-kit verify-pack --pack run-pack.tar.gz --contract replay
 copybook-kit serve --db build/ledger.sqlite --port 5000
 copybook-kit demo
 ```
@@ -78,7 +81,7 @@ JSON 使用排序键与紧凑分隔符，Decimal 按声明 scale 输出字符串
 
 `CB001`–`CB009` copybook，`RD001`–`RD004` 读取，`DE001`–`DE003` 解码，
 `R001`–`R010` 字段/记录规则，`FL001`–`FL005` 文件规则，`RC001`–`RC004` 规则契约，
-`LD001`–`LD003` 台账，`IO001` 文件系统，`CLI001` 参数。完整清单见
+`LD001`–`LD003` 台账，`IO001` 文件系统，`CLI001` 参数，`PK001`–`PK003` 证据包。完整清单见
 [docs/CONTRACT.md](docs/CONTRACT.md)，子集与显式拒绝清单见
 [docs/COPYBOOK_SUBSET.md](docs/COPYBOOK_SUBSET.md)，产物与台账见
 [docs/OUTPUTS.md](docs/OUTPUTS.md)。

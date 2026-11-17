@@ -11,6 +11,14 @@ from .copybook.layout import compile_file
 from .demo import run_demo
 from .errors import CompileError, CopybookKitError, InputError, LedgerError
 from .pipeline.options import RunOptions
+from .pipeline.portable_pack import (
+    DEFAULT_MAX_MEMBER_BYTES,
+    DEFAULT_MAX_MEMBERS,
+    DEFAULT_MAX_PACK_BYTES,
+    DEFAULT_MAX_TOTAL_BYTES,
+    pack_run,
+    verify_pack,
+)
 from .pipeline.runner import resume_run, run
 from .store.ledger import Ledger
 from .util import parse_now, pretty_json
@@ -88,6 +96,20 @@ def command_serve(args: argparse.Namespace) -> int:
     create_app(args.db).run(host="127.0.0.1", port=args.port, debug=False, use_reloader=False)
     return 0
 
+def command_pack_run(args: argparse.Namespace) -> int:
+    result = pack_run(args.run_id, args.db, args.out, max_pack_bytes=args.max_pack_bytes)
+    print(pretty_json(result), end="")
+    return 0
+
+def command_verify_pack(args: argparse.Namespace) -> int:
+    verdict = verify_pack(args.pack, contract=args.contract,
+                          manifest_sha256=args.manifest_sha256,
+                          max_members=args.max_members,
+                          max_member_bytes=args.max_member_bytes,
+                          max_total_bytes=args.max_total_bytes)
+    print(pretty_json(verdict), end="")
+    return 0 if verdict["ok"] else 3
+
 def command_demo(args: argparse.Namespace) -> int:
     return run_demo(args.fixtures, args.out, parse_now(args.now or "2026-01-01T00:00:00Z"))
 
@@ -123,6 +145,24 @@ def build_parser() -> CliParser:
     profile.add_argument("--db", type=Path, default=DEFAULT_DB)
     profile.add_argument("--output", type=Path)
     profile.set_defaults(func=command_profile)
+    pack = sub.add_parser("pack-run", help="build a self-contained evidence pack for a finished run")
+    pack.add_argument("--run-id", required=True)
+    pack.add_argument("--db", type=Path, default=DEFAULT_DB)
+    pack.add_argument("--out", type=Path, required=True, help="pack output path (.tar.gz)")
+    pack.add_argument("--max-pack-bytes", type=int, default=DEFAULT_MAX_PACK_BYTES,
+                      help="compressed pack budget; nothing is published when exceeded")
+    pack.set_defaults(func=command_pack_run)
+    verify = sub.add_parser("verify-pack", help="verify a run evidence pack offline")
+    verify.add_argument("--pack", type=Path, required=True)
+    verify.add_argument("--contract", required=True, choices=["bytes", "replay"],
+                        help="bytes: handover matches the approved manifest; "
+                             "replay: also recompute the run from packed bytes")
+    verify.add_argument("--manifest-sha256",
+                        help="independently preserved manifest hash (required for bytes)")
+    verify.add_argument("--max-members", type=int, default=DEFAULT_MAX_MEMBERS)
+    verify.add_argument("--max-member-bytes", type=int, default=DEFAULT_MAX_MEMBER_BYTES)
+    verify.add_argument("--max-total-bytes", type=int, default=DEFAULT_MAX_TOTAL_BYTES)
+    verify.set_defaults(func=command_verify_pack)
     serve = sub.add_parser("serve", help="start the read-only console on 127.0.0.1")
     serve.add_argument("--db", type=Path, default=DEFAULT_DB)
     serve.add_argument("--port", type=int, default=5000)
