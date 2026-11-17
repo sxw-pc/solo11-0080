@@ -55,9 +55,16 @@ CREATE TABLE IF NOT EXISTS run_events (
     run_id TEXT NOT NULL, seq INTEGER NOT NULL, event TEXT NOT NULL,
     detail_json TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (run_id, seq),
     FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS correction_batches (
+    batch_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, source_run_id TEXT NOT NULL,
+    contract TEXT NOT NULL, status TEXT NOT NULL, manifest_sha256 TEXT NOT NULL,
+    manifest_json TEXT NOT NULL, diff_json TEXT NOT NULL DEFAULT '[]',
+    report_json TEXT NOT NULL DEFAULT '{}', output_path TEXT, output_sha256 TEXT,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_runs_created ON runs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_rejects_run ON rejects(run_id, reject_no);
 CREATE INDEX IF NOT EXISTS idx_events_run ON run_events(run_id, seq);
+CREATE INDEX IF NOT EXISTS idx_batches_source ON correction_batches(source_run_id);
 """
 
 def dump(value: Any) -> str:

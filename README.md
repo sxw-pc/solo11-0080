@@ -42,6 +42,7 @@ copybook-kit run --input fixtures/data/customer_normal.dat \
   --db build/ledger.sqlite --out build/runs --now 2026-01-01T00:00:00Z
 copybook-kit resume --run-id <run-id> --db build/ledger.sqlite
 copybook-kit reprocess --run-id <run-id> --rules fixtures/rules/negative_rules.yaml
+copybook-kit correct --manifest corrections.yaml --db build/ledger.sqlite
 copybook-kit profile --run-id <run-id> --db build/ledger.sqlite
 copybook-kit serve --db build/ledger.sqlite --port 5000
 copybook-kit demo
@@ -51,6 +52,14 @@ copybook-kit demo
 warnings 与 errors；存在任何 CB 错误时退出码为 2。运行退出码：`0` 完成，
 `3` 文件级失败（截断、约束不满足），`2` CLI/契约/IO 错误。
 
+`correct` 按审批过的 YAML 更正清单导出一份额外的新定长文件，并用原 copybook、原规则
+复核后作为一轮 `kind=correct` 子运行发布；原输入与原拒绝字节保持只读。清单逐项给出
+记录号、叶子路径（含 OCCURS 下标）、预期原记录 SHA-256 与新值，并为每个触及的
+REDEFINES 组声明采用哪一支解释结果。`contract: evidence` 只替换获批字段的字节，
+`contract: canonical` 还把所选分支的已解码字段重编码为规范字节表示（须证明业务值
+不变）。编码或冲突校验失败时整单拒绝（CR001–CR007），不产生任何子运行；同一清单
+重复提交幂等返回，已导出文件永不覆盖。详见 [docs/OUTPUTS.md](docs/OUTPUTS.md)。
+
 ## 目录
 
 ```
@@ -59,12 +68,13 @@ copybook_kit/
   decode/     DISPLAY / 带符号 / COMP-3 解码与稳定诊断
   rules/      规则 schema、字段检查、记录/文件引擎
   pipeline/   读取、处理、幂等运行、断点、画像、报告
+  correct/    更正清单、字段编码、REDEFINES 计划、隔离导出与发布
   store/      SQLite 台账 schema 与查询
   report/     Markdown / 自包含 HTML
   web/        127.0.0.1 只读控制台
 fixtures/     三个 copybook、四份规则、合成数据与确定性生成器
 docs/         子集、规则契约、输出与台账说明
-tests/        解析、布局、解码、规则、管道、台账、恢复、报告、Web、CLI、黄金样例
+tests/        解析、布局、解码、规则、管道、台账、恢复、更正、报告、Web、CLI、黄金样例
 ```
 
 ## 复现性
@@ -78,7 +88,7 @@ JSON 使用排序键与紧凑分隔符，Decimal 按声明 scale 输出字符串
 
 `CB001`–`CB009` copybook，`RD001`–`RD004` 读取，`DE001`–`DE003` 解码，
 `R001`–`R010` 字段/记录规则，`FL001`–`FL005` 文件规则，`RC001`–`RC004` 规则契约，
-`LD001`–`LD003` 台账，`IO001` 文件系统，`CLI001` 参数。完整清单见
+`LD001`–`LD003` 台账，`IO001` 文件系统，`CLI001` 参数，`CR001`–`CR007` 更正导出。完整清单见
 [docs/CONTRACT.md](docs/CONTRACT.md)，子集与显式拒绝清单见
 [docs/COPYBOOK_SUBSET.md](docs/COPYBOOK_SUBSET.md)，产物与台账见
 [docs/OUTPUTS.md](docs/OUTPUTS.md)。

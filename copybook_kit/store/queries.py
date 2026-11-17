@@ -68,3 +68,24 @@ class LedgerQueries:
         for row in rows:
             row["detail"] = json.loads(row.pop("detail_json"))
         return rows
+
+    def _batch_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        row["manifest"] = json.loads(row.pop("manifest_json"))
+        row["diff_ranges"] = json.loads(row.pop("diff_json"))
+        row["report"] = json.loads(row.pop("report_json"))
+        return row
+
+    def get_correction_batch(self, batch_id: str) -> dict[str, Any] | None:
+        row = self._one("SELECT * FROM correction_batches WHERE batch_id = ?", (batch_id,))
+        return self._batch_row(row) if row else None
+
+    def list_correction_batches(self, source_run_id: str | None = None,
+                                limit: int = 200) -> list[dict[str, Any]]:
+        if source_run_id is None:
+            rows = self._many("SELECT * FROM correction_batches ORDER BY created_at DESC, "
+                              "batch_id DESC LIMIT ?", (limit,))
+        else:
+            rows = self._many("SELECT * FROM correction_batches WHERE source_run_id = ? "
+                              "ORDER BY created_at DESC, batch_id DESC LIMIT ?",
+                              (source_run_id, limit))
+        return [self._batch_row(row) for row in rows]

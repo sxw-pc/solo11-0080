@@ -43,10 +43,45 @@ SQLite 表：
 - `file_issues`：文件级问题及偏移。
 - `checkpoints`：每 25 条记录的进度与唯一键快照，用于审计和恢复。
 - `run_events`：`run_started`、`run_resumed`、`run_finished` 等事件。
+- `correction_batches`：更正批次——合同、状态、清单 JSON、差异字节范围、报告、导出文件摘要。
 
 `resume` 会重新校验输入指纹；输入或规则已变化时报 `LD003`。恢复会重置该运行的检查点、
 拒绝和问题行，再完整重放，避免部分状态混入最终结果。`reprocess` 新建子运行，继承父运行的
 输入与 copybook，换用新规则，并记录 `parent_run_id` 形成血缘。
+
+## 更正导出（correct）
+
+`correct --manifest m.yaml` 按审批清单从原运行的输入导出新文件并复核发布：
+
+1. 校验清单（CR001）、原运行终态、原输入/copybook/规则三份 SHA-256 仍与台账一致（CR002）、
+   每项记录摘要（CR002）、叶子路径唯一定位（CR003）、REDEFINES 分支声明（CR006）、
+   同记录写字节区间互不重叠（CR005）。
+2. 在 `<out>/.staging-<batch-id>/` 隔离目录内完成编码，并用原 copybook、原规则、原参数
+   对新文件完整重跑一遍（不入账）。
+3. 新文件原子落位 `<out>/exports/corrected-<run-id>.dat`（已存在且摘要一致则跳过，
+   不一致则报错，绝不覆盖）；台账先写入 `status=publishing` 的批次行（血缘此刻即可回读），
+   再以 `kind=correct`、`parent_run_id=原运行` 发布一轮完整子运行。
+4. 子运行完成后批次更新为 `published`，完整报告写入 `correction_batches.report_json`
+   与子运行目录的 `correction.json`。任一步失败：staging 被清理，批次标记 `failed` 或保持
+   `publishing`（重交同一清单可自愈续跑），不会留下看似已完成的子运行。
+
+批次键 `batch_id` 由清单内容摘要与原运行的输入/copybook/规则指纹决定；同一清单重复提交
+直接返回已发布报告并标记 `idempotent=true`。`correction_batches` 表记录
+`contract`（`evidence`/`canonical`）与 `diff_json` 差异字节范围
+（`reason` 为 `correction` 或 `recanonicalize`），新文件不会伪装成原证据：
+子运行摘要的 `input` 指向导出文件而非原输入。
+
+报告字段：`input`/`output` 的原与新 SHA-256、`corrections` 逐项的原/新字节
+（hex）、`old_sha8`/`new_sha8` 与原/新业务值、`diff_ranges`、`review`（新运行的
+status/counts/reject_codes/exit_code）与 `unchanged_bytes_verified`——为 `true` 时，
+除 `diff_ranges` 列出的区间外，新文件与原输入逐字节一致。
+
+两种导出合同：
+
+- `evidence`：只替换获批字段的字节，其余字节（含合法但非规范的符号/填充）逐字节保持。
+- `canonical`：对触及记录中所选分支的全部已解码字段重编码为规范字节；重编码前解码、
+  编码后再解码证明业务值未变（否则 `CR007` 整单拒绝）；未获选分支与未声明组的覆盖区、
+  以及解码失败的字段区域，一律保留原字节。
 
 ## 只读控制台
 

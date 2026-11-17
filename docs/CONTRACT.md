@@ -65,3 +65,25 @@ limits: {min_records: 1, max_records: 100}
 | 规则契约 | `RC001` schema、`RC002` 正则、`RC003` 值类型/范围、`RC004` 未知字段 |
 | 读取/解码 | `RD001` 字符集、`RD002` 截断、`RD003` 空文件、`RD004` 记录上限；`DE001` DISPLAY、`DE002` COMP-3、`DE003` 空值策略 |
 | 台账/IO/CLI | `LD001` 未完成同键运行、`LD002` 运行不存在、`LD003` 键冲突；`IO001`；`CLI001` |
+| 更正导出 | `CR001` 清单契约、`CR002` 原摘要不再匹配、`CR003` 路径无法唯一定位、`CR004` 值不可编码（超长/溢出/不可表示）、`CR005` 字节区间冲突（含 REDEFINES 双分支同改）、`CR006` 重定义分支声明缺失或不一致、`CR007` 规范重编码无法保持业务值 |
+
+## 更正清单契约
+
+`correct` 命令读取 UTF-8 YAML 清单（最大 512 KiB，禁止重复键与浮点字面量）：
+
+```yaml
+version: 1
+name: march-corrections          # 可选，默认文件名
+source_run_id: run-<id>        # 原运行，必须是终态
+contract: evidence             # evidence | canonical
+redefines:                     # 每个被触及的 REDEFINES 组必须声明采用哪一支
+  CONTACT: CONTACT-V2
+corrections:
+  - record_no: 3               # 原输入中的记录号（从 1 开始）
+    expected_sha256: "<64 hex>"# 该记录原字节的预期 SHA-256
+    path: SCORE-HISTORY[1]     # 解码路径，含组前缀与 OCCURS 下标
+    value: "0123"              # 字符串/整数/null；金额用字符串保持精度
+```
+
+所有项共享 `source_run_id`：一批只从一份原输入导出一个新文件。校验任一项失败
+（CR001–CR007）时整单拒绝，不写任何文件；诊断携带记录号、字段路径与字节偏移。

@@ -28,6 +28,13 @@ CODE_CATALOG = {
     "LD001": "an incomplete run with this run key already exists", "LD002": "run id not found",
     "LD003": "run key conflicts with an existing run", "IO001": "filesystem access failed",
     "CLI001": "invalid command-line argument",
+    "CR001": "correction manifest contract error",
+    "CR002": "an original digest no longer matches",
+    "CR003": "copybook leaf path cannot be uniquely located",
+    "CR004": "correction value cannot be encoded",
+    "CR005": "conflicting writes to the same byte range",
+    "CR006": "REDEFINES branch selection is missing or inconsistent",
+    "CR007": "canonical re-encoding would change a business value",
 }
 FATAL_FILE_CODES = frozenset({"RD002", "RD003", "FL001", "FL002", "FL003", "FL004", "FL005"})
 
@@ -88,6 +95,19 @@ class CompileError(CopybookKitError):
 class RulesError(CopybookKitError):
     def __init__(self, message: str, *, code: str = "RC001"):
         super().__init__(message, code=code)
+
+class CorrectionError(CopybookKitError):
+    """A correction batch is rejected as a whole before anything is published."""
+
+    code = "CR001"
+
+    def __init__(self, diagnostics: list[Diagnostic]):
+        self.diagnostics = list(diagnostics)
+        super().__init__("; ".join(f"{item.code}: {item.message}" for item in self.diagnostics)
+                         or "correction batch rejected")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"ok": False, "errors": [item.to_dict() for item in self.diagnostics]}
 
 class LedgerError(CopybookKitError):
     code = "LD003"

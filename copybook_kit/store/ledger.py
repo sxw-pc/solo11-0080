@@ -116,6 +116,37 @@ class Ledger(LedgerQueries):
              issue.get("byte_offset"), issue.get("record_no"), dump(issue.get("detail", {}))))],
             "cannot persist file issue")
 
+    def insert_correction_batch(self, entry: dict[str, Any]) -> None:
+        self._write([(
+            "INSERT INTO correction_batches (batch_id, run_id, source_run_id, contract, status, "
+            "manifest_sha256, manifest_json, diff_json, report_json, output_path, output_sha256, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (entry["batch_id"], entry["run_id"], entry["source_run_id"], entry["contract"],
+             entry["status"], entry["manifest_sha256"], dump(entry["manifest"]),
+             dump(entry.get("diff_ranges", [])), dump(entry.get("report", {})),
+             entry.get("output_path"), entry.get("output_sha256"),
+             entry["created_at"], entry["updated_at"]))],
+            "cannot persist correction batch", "LD003")
+
+    def update_correction_batch(self, batch_id: str, *, status: str,
+                                report: dict[str, Any] | None = None,
+                                diff_ranges: list[dict[str, Any]] | None = None,
+                                updated_at: str) -> None:
+        statements: list[tuple[str, tuple]] = [(
+            "UPDATE correction_batches SET status = ?, updated_at = ? WHERE batch_id = ?",
+            (status, updated_at, batch_id))]
+        if report is not None:
+            statements.append(("UPDATE correction_batches SET report_json = ? WHERE batch_id = ?",
+                               (dump(report), batch_id)))
+        if diff_ranges is not None:
+            statements.append(("UPDATE correction_batches SET diff_json = ? WHERE batch_id = ?",
+                               (dump(diff_ranges), batch_id)))
+        self._write(statements, f"cannot update correction batch {batch_id}", "LD003")
+
+    def delete_correction_batch(self, batch_id: str) -> None:
+        self._write([("DELETE FROM correction_batches WHERE batch_id = ?", (batch_id,))],
+                    f"cannot delete correction batch {batch_id}", "LD003")
+
     def finish_run(self, run_id: str, *, status: str, exit_code: int, counts: dict[str, int],
                    reject_codes: dict[str, int], outputs: dict[str, str], updated_at: str) -> None:
         params = (status, exit_code, updated_at, counts.get("total_records", 0),

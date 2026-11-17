@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from .copybook.layout import compile_file
+from .correct.export import CorrectOptions, correct
 from .demo import run_demo
 from .errors import CompileError, CopybookKitError, InputError, LedgerError
 from .pipeline.options import RunOptions
@@ -66,6 +67,12 @@ def command_reprocess(args: argparse.Namespace) -> int:
         parent_run_id=parent["run_id"], kind="reprocess",
         notes=f"reprocess of {parent['run_id']}")))
 
+def command_correct(args: argparse.Namespace) -> int:
+    report = correct(CorrectOptions(manifest_path=args.manifest, db_path=args.db,
+                                    now=parse_now(args.now), out_root=args.out))
+    print(pretty_json(report.to_dict()), end="")
+    return int(report.exit_code)
+
 def command_profile(args: argparse.Namespace) -> int:
     run_row = Ledger(args.db).get_run(args.run_id)
     if run_row is None:
@@ -118,6 +125,14 @@ def build_parser() -> CliParser:
     reprocess.add_argument("--out", type=Path, help="new run artifact root")
     _add_common(reprocess)
     reprocess.set_defaults(func=command_reprocess)
+    correct_parser = sub.add_parser("correct", help="export an approved correction batch and "
+                                    "re-review it under the original contract")
+    correct_parser.add_argument("--manifest", type=Path, required=True,
+                                help="approved correction manifest (YAML)")
+    correct_parser.add_argument("--out", type=Path,
+                                help="child run artifact root (defaults to the source run's)")
+    _add_common(correct_parser)
+    correct_parser.set_defaults(func=command_correct)
     profile = sub.add_parser("profile", help="print or copy a run's field profile JSON")
     profile.add_argument("--run-id", required=True)
     profile.add_argument("--db", type=Path, default=DEFAULT_DB)
