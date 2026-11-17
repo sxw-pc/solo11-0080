@@ -12,7 +12,7 @@
 ```bash
 python -m pip install -e .
 make demo          # 六个场景走完 编译 -> 解码 -> 校验 -> 台账 -> 报告
-pytest -q          # 84 个测试，含黄金样例与逐字节复现检查
+pytest -q          # 104 个测试，含黄金样例与逐字节复现检查
 python -m copybook_kit.cli serve --port 5000
 ```
 
@@ -43,6 +43,8 @@ copybook-kit run --input fixtures/data/customer_normal.dat \
 copybook-kit resume --run-id <run-id> --db build/ledger.sqlite
 copybook-kit reprocess --run-id <run-id> --rules fixtures/rules/negative_rules.yaml
 copybook-kit profile --run-id <run-id> --db build/ledger.sqlite
+copybook-kit certify-rules --copybook fixtures/copybooks/customer.cpy \
+  --rules fixtures/rules/customer_rules.yaml --mode proof
 copybook-kit serve --db build/ledger.sqlite --port 5000
 copybook-kit demo
 ```
@@ -50,6 +52,30 @@ copybook-kit demo
 `validate` 输出字段树（offset/length/pic/usage/scale/occurs/redefines）、记录总长、
 warnings 与 errors；存在任何 CB 错误时退出码为 2。运行退出码：`0` 完成，
 `3` 文件级失败（截断、约束不满足），`2` CLI/契约/IO 错误。
+
+### certify-rules：离线规则可满足性
+
+YAML 通过 schema 校验不代表存在任何一条定长原始记录能同时满足它。`certify-rules`
+不读数据文件、不碰台账与 run 产物，只对“一条 data 记录”做离线分析，输出三种结论：
+
+- `SAT`（退出码 0）：附一条按布局编码、**恰好 record_length 字节**的原始字节 witness，
+  并经正式 `decode_record` 与 `RuleEngine.validate_record` 复核通过（含字段偏移与证据哈希）。
+- `UNSAT`（退出码 1）：附由字段编码域、规则子句与跨字段关系组成的可复核矛盾链；
+  仅在证明模式（`--mode proof`）下给出，依据是域交集与 `<=`/`<` 推导，而非抽样未命中。
+- `UNKNOWN`（退出码 2）：受支持范围外的约束（开放 domain 上的任意 pattern、
+  REDEFINES 重叠、OCCURS 多值、`==`/`!=` 关系）阻止完整证明，或找证人模式预算耗尽。
+
+两种授权用途对应两种诚实路线：
+
+| 模式 | 用途 | 行为 |
+| --- | --- | --- |
+| `--mode witness`（交付测试数据） | 固定预算内找证人 | 找到即给经复核的 SAT witness；预算耗尽只报 UNKNOWN，绝不声称规则无解 |
+| `--mode proof`（上线前契约审查） | 可审计证明 | 用域交集与跨字段推导给出 UNSAT 证书或 SAT witness，其余 UNKNOWN |
+
+同一 `enum=["A","I"]` + `pattern=^Z$` 冲突：找证人模式预算用完是 UNKNOWN，证明模式
+可给 UNSAT——两者证明范围不同且都诚实。报告含 copybook/规则 SHA-256、已覆盖与放弃
+推理的约束、witness 原始字节摘要/字段偏移（或矛盾来源路径）；同输入报告字节稳定。
+支持 DISPLAY 数值/Decimal scale、枚举、日期区间、required、check_digit 与 `<=`/`<`。
 
 ## 目录
 

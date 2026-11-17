@@ -12,9 +12,15 @@ from .demo import run_demo
 from .errors import CompileError, CopybookKitError, InputError, LedgerError
 from .pipeline.options import RunOptions
 from .pipeline.runner import resume_run, run
+from .rules.certify import DEFAULT_BUDGET, DEFAULT_SEED, certify
+from .rules.loader import load_rules
 from .store.ledger import Ledger
-from .util import parse_now, pretty_json
+from .util import parse_now, pretty_json, sha256_bytes
 from .web.app import create_app
+
+# certify-rules never mutates ledger/run artifacts; exit codes only signal the
+# verdict so CI can branch without parsing JSON.
+CERTIFY_EXIT = {"SAT": 0, "UNSAT": 1, "UNKNOWN": 2}
 
 DEFAULT_DB = Path("build/ledger.sqlite")
 DEFAULT_OUT = Path("build/runs")
@@ -91,6 +97,27 @@ def command_serve(args: argparse.Namespace) -> int:
 def command_demo(args: argparse.Namespace) -> int:
     return run_demo(args.fixtures, args.out, parse_now(args.now or "2026-01-01T00:00:00Z"))
 
+def command_certify_rules(args: argparse.Namespace) -> int:
+    """Offline rule satisfiability certification; read-only against run state."""
+    try:
+        copybook_bytes = args.copybook.read_bytes()
+        rules_bytes = args.rules.read_bytes()
+    except OSError as exc:
+        raise InputError(f"cannot read contract file: {exc}", code="IO001") from exc
+    if args.budget <= 0 or args.seed < 0:
+        raise InputError("--budget must be positive and --seed non-negative", code="CLI001")
+    layout = compile_file(str(args.copybook))
+    if not layout.valid:
+        raise CompileError(layout.errors)
+    ruleset = load_rules(args.rules, layout)
+    report = certify(layout, ruleset, mode=args.mode, charset=args.charset,
+                     budget=args.budget, seed=args.seed,
+                     copybook_sha256=sha256_bytes(copybook_bytes),
+                     rules_sha256=sha256_bytes(rules_bytes))
+    report["ok"] = True
+    print(pretty_json(report), end="")
+    return CERTIFY_EXIT[report["verdict"]]
+
 def build_parser() -> CliParser:
     parser = CliParser(prog="copybook-kit", description="定长契勘台：定长 copybook 契约摄入工具")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -132,6 +159,19 @@ def build_parser() -> CliParser:
     demo.add_argument("--out", type=Path, default=Path("build/demo"))
     demo.add_argument("--now", help="defaults to 2026-01-01T00:00:00Z for byte stability")
     demo.set_defaults(func=command_demo)
+    certify = sub.add_parser(
+        "certify-rules",
+        help="offline SAT/UNSAT/UNKNOWN certification of one data record against copybook+rules")
+    certify.add_argument("--copybook", type=Path, required=True)
+    certify.add_argument("--rules", type=Path, required=True)
+    certify.add_argument("--mode", choices=["proof", "witness"], default="proof",
+                         help="proof: auditable domain certificate; witness: bounded search, "
+                              "budget exhaustion is UNKNOWN never UNSAT")
+    certify.add_argument("--charset", default="utf-8", choices=["utf-8", "latin-1", "cp037"])
+    certify.add_argument("--budget", type=int, default=DEFAULT_BUDGET,
+                         help="witness-mode candidate attempts (fixed search budget)")
+    certify.add_argument("--seed", type=int, default=DEFAULT_SEED, help="deterministic witness RNG seed")
+    certify.set_defaults(func=command_certify_rules)
     return parser
 
 def main(argv: list[str] | None = None) -> int:

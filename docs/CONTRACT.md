@@ -65,3 +65,23 @@ limits: {min_records: 1, max_records: 100}
 | 规则契约 | `RC001` schema、`RC002` 正则、`RC003` 值类型/范围、`RC004` 未知字段 |
 | 读取/解码 | `RD001` 字符集、`RD002` 截断、`RD003` 空文件、`RD004` 记录上限；`DE001` DISPLAY、`DE002` COMP-3、`DE003` 空值策略 |
 | 台账/IO/CLI | `LD001` 未完成同键运行、`LD002` 运行不存在、`LD003` 键冲突；`IO001`；`CLI001` |
+
+## certify-rules 离线可满足性
+
+`copybook-kit certify-rules --copybook ... --rules ... --mode proof|witness` 不读数据文件、
+不打开台账、不写 run 产物，只判断**一条 data 记录**是否可满足契约，结论只有三种：
+
+- `SAT`：报告内 witness 是按布局编码、长度恰为 `record_length` 的原始字节；必须通过正式
+  `decode_record`（零解码错误）与 `RuleEngine.validate_record`（零命中）复核，缺失字段的
+  blank 策略与不可编码的字符/数值都不能被当作 SAT。
+- `UNSAT`：`contradiction_chain` 的每一步都来自可编码字段域（PIC/USAGE/字段宽度）、
+  受支持规则子句（enum、数值/日期 range、date_format、required、scale、check_digit）或
+  `<=`/`<` 跨字段关系；证明模式专用，禁止用随机样本未命中宣布无解。
+- `UNKNOWN`：开放 domain 上的任意 pattern、REDEFINES 重叠分支、OCCURS 多值引用、
+  `==`/`!=` 关系等放弃推理的约束（见 `coverage.abandoned`），或 witness 模式预算耗尽
+  （`unknown_reasons=search_budget_exhausted`）。已构成独立矛盾时仍报 UNSAT。
+
+witness 模式只负责找测试数据，任何情况下都不报 UNSAT；proof 模式负责契约审查，
+预算参数对其无效。报告固定含 copybook/规则 SHA-256、`coverage.{reasoned,abandoned,
+out_of_scope}`、witness 的 `raw_hex/raw_sha256/fields(offset,length,evidence_sha8)` 或
+矛盾链来源路径，同输入序列化字节稳定。退出码：SAT=0、UNSAT=1、UNKNOWN=2。
