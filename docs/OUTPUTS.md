@@ -59,3 +59,35 @@ SQLite 表：
 - `/runs/<run-id>/rejects/<n>/raw`：下载原始拒绝字节，路径限制在运行目录内。
 
 控制台只读，没有写接口；所有展示内容经 HTML 转义。
+
+## 离线拒绝复核抽样（plan-reject-audit）
+
+`copybook-kit plan-reject-audit --request <plan.json>` 从一个已完成 run
+（`completed` / `completed_with_rejects`）的拒绝台账生成只读人工复核样本清单，
+不写回台账、run 目录或任何拒绝字节。请求字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `run_id` | 已完成 run 的 ID |
+| `quotas` | 每个错误码需要的**独立记录数**，如 `{"R002_ENUM": 2}` |
+| `budget` | 总审阅记录上限（正整数） |
+| `exclusion_groups` | 可选，`record_no` 列表的列表；同组至多入选一条（不可同时披露） |
+| `contract` | `exact`（默认）或 `bounded` |
+| `node_budget` | 可选搜索节点预算，覆盖合同默认值 |
+
+一条拒绝可凭多个 `codes` 同时满足多个配额，但同一码下一条记录只计一次。计划只引用
+台账真实字段 `reject_no` / `record_no` / `byte_offset` / `raw_sha256` / `raw_file`；
+生成前对每个 `rejects/record-*.bin` 重新计算 SHA-256 并核对长度，与台账不符报 `AU001`，
+`partial` 解码值永不参与证据重建。`FL*` 文件级问题没有拒绝行，标记为
+`file_level_not_sampleable`，不会被当成可抽样码。
+
+- `exact`：候选数与预算各 ≤ 24 时启用，分支限界穷举，`status="optimal"` 并附
+  `optimality_proof`（最小记录数、可采纳下界、搜索节点）；不可行时
+  `status="infeasible"` 并附 `infeasibility_certificate`（候选不足 `insufficient_candidates`、
+  预算下界 `budget_lower_bound` 或穷尽无可行选择 `no_satisfiable_selection`）。
+- `bounded`：固定节点预算内寻找任意可行集合，`status="feasible"` 但不含最优证明；
+  预算耗尽且无结论时 `status="undecided"`，附 `undecided_certificate`（已证实覆盖与
+  未满足配额），区别于已证明的 `infeasible`。
+
+输出还包含输入/规则指纹、台账码集合与计数、每个配额的 `covered_by` 与状态、证据校验方法。
+选择与平局按稳定的 `(record_no, raw_sha256)` 排序，重复执行逐字节稳定。

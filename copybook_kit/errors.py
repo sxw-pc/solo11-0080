@@ -28,6 +28,8 @@ CODE_CATALOG = {
     "LD001": "an incomplete run with this run key already exists", "LD002": "run id not found",
     "LD003": "run key conflicts with an existing run", "IO001": "filesystem access failed",
     "CLI001": "invalid command-line argument",
+    "AU001": "reject evidence failed raw-byte verification",
+    "AU002": "invalid reject audit plan request or contract scale",
 }
 FATAL_FILE_CODES = frozenset({"RD002", "RD003", "FL001", "FL002", "FL003", "FL004", "FL005"})
 

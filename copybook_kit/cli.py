@@ -10,10 +10,11 @@ from pathlib import Path
 from .copybook.layout import compile_file
 from .demo import run_demo
 from .errors import CompileError, CopybookKitError, InputError, LedgerError
+from .pipeline.audit_sample import build_audit_plan
 from .pipeline.options import RunOptions
 from .pipeline.runner import resume_run, run
 from .store.ledger import Ledger
-from .util import parse_now, pretty_json
+from .util import parse_now, pretty_json, write_json_atomic
 from .web.app import create_app
 
 DEFAULT_DB = Path("build/ledger.sqlite")
@@ -91,6 +92,34 @@ def command_serve(args: argparse.Namespace) -> int:
 def command_demo(args: argparse.Namespace) -> int:
     return run_demo(args.fixtures, args.out, parse_now(args.now or "2026-01-01T00:00:00Z"))
 
+def command_plan_reject_audit(args: argparse.Namespace) -> int:
+    try:
+        payload = json.loads(args.request.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise InputError(f"cannot read plan request {args.request}: {exc}", code="IO001") from exc
+    except json.JSONDecodeError as exc:
+        raise InputError(f"plan request is not valid JSON: {exc}", code="CLI001") from exc
+    if not isinstance(payload, dict):
+        raise InputError("plan request must be a JSON object", code="CLI001")
+    if args.run_id:
+        payload["run_id"] = args.run_id
+    if args.budget is not None:
+        payload["budget"] = args.budget
+    if args.contract:
+        payload["contract"] = args.contract
+    if args.node_budget is not None:
+        payload["node_budget"] = args.node_budget
+    plan = build_audit_plan(Ledger(args.db), payload)
+    text = pretty_json(plan)
+    if args.output:
+        write_json_atomic(args.output, plan)
+    else:
+        print(text, end="")
+    # Exit 0 even for proven infeasibility / undecided: the plan itself is a
+    # valid read-only artifact; malformed requests and evidence tampering fail
+    # through the normal error handling with exit code 2.
+    return 0
+
 def build_parser() -> CliParser:
     parser = CliParser(prog="copybook-kit", description="定长契勘台：定长 copybook 契约摄入工具")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -132,6 +161,18 @@ def build_parser() -> CliParser:
     demo.add_argument("--out", type=Path, default=Path("build/demo"))
     demo.add_argument("--now", help="defaults to 2026-01-01T00:00:00Z for byte stability")
     demo.set_defaults(func=command_demo)
+    audit = sub.add_parser("plan-reject-audit",
+                           help="build a read-only human-review sample plan from a run's reject ledger")
+    audit.add_argument("--request", type=Path, required=True,
+                       help="JSON file: run_id, quotas {code: count}, budget, optional "
+                            "exclusion_groups [[record_no, ...]], contract (exact|bounded), node_budget")
+    audit.add_argument("--run-id", help="override run_id in the request file")
+    audit.add_argument("--budget", type=int, help="override the total review budget")
+    audit.add_argument("--contract", choices=("exact", "bounded"), help="override the planning contract")
+    audit.add_argument("--node-budget", type=int, help="override the fixed search node budget")
+    audit.add_argument("--output", type=Path, help="write the plan JSON here instead of stdout")
+    _add_common(audit)
+    audit.set_defaults(func=command_plan_reject_audit)
     return parser
 
 def main(argv: list[str] | None = None) -> int:
