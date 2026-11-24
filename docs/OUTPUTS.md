@@ -59,3 +59,33 @@ SQLite 表：
 - `/runs/<run-id>/rejects/<n>/raw`：下载原始拒绝字节，路径限制在运行目录内。
 
 控制台只读，没有写接口；所有展示内容经 HTML 转义。
+
+## 离线计息（accrue-balances）
+
+`accrue-balances` 是只读的离线报告命令，不创建运行、不写台账，也不改动任何运行
+目录。它的证据只来自 `LedgerQueries` 的运行状态与运行产物中的
+`accepted.jsonl` / `rejects.jsonl`：
+
+- 输入与规则摘要：重读磁盘原文件并与台账 `input_sha256` / `rules_sha256` 比对；
+  可选 `--copybook` 再校验每个运行的 `copybook_sha256`。
+- `accepted.jsonl` 摘要：逐行核对 `record_no` 唯一性，并按 `byte_offset` /
+  `raw_length` 从原输入切片重算 SHA-256，与行内 `raw_sha256` 比对。
+- 只有已接收且符合 `balance.cpy` 的 `ACCOUNT-ID` / `AMOUNT` / `RATE` /
+  `BOOK-DATE` 行能建立日状态；每条日状态携带源 `run_id`、`record_no`、
+  `raw_sha256` 与规则摘要。`AMOUNT` 允许为负，`RATE` 按四位小数十进制比例读取，
+  全程不使用 float。
+- 拒绝记录可识别 `ACCOUNT-ID` 时仅该账户在该日期未知；无法可靠识别时该文件全部
+  预期账户未知。`RD004` max-records 前缀、文件级失败、各类摘要不匹配、缺行
+  （缺行不等于零余额）同样产生未知区间，未知原因逐段写入报告。
+
+修订清单是本地 JSON，条目字段为 `run_id`、`business_date`（YYYYMMDD，须与记录
+`BOOK-DATE` 一致）、`expected_accounts`、`supersedes_run_id`、`authorized_at`、
+`close_at`，顶层可提供默认 `close_at`。替代边必须在清单内闭环解析；同账户同日期
+无替代链相连的两个根判定为 `unlinked_version_conflict`，一条旧版本被两个新版本
+替代判定为 `revision_fork`，互相替代判定为 `revision_cycle`，均只输出分段未知。
+
+报告区分两条路线且来源标签独立：`historical` 按各修订链根条目的 `close_at`
+冻结当时已授权版本；`restatement` 按 `--as-of` 授权截止时刻沿链选最新有效版本，
+并在 `restatement_diff` 中给出每账户旧/新分舍值与 `delta_cents`。计息采用半开
+`[start,end)`、快照向前携带、每日 `AMOUNT*RATE/365` 的 `Decimal` 全精度累加，
+最终一次 half-even 舍入到分；任何账户含未知段时不给整期金额，无冲突账户独立结算。

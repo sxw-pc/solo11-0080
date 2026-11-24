@@ -10,10 +10,11 @@ from pathlib import Path
 from .copybook.layout import compile_file
 from .demo import run_demo
 from .errors import CompileError, CopybookKitError, InputError, LedgerError
+from .pipeline.accrual import build_accrual_report
 from .pipeline.options import RunOptions
 from .pipeline.runner import resume_run, run
 from .store.ledger import Ledger
-from .util import parse_now, pretty_json
+from .util import parse_now, pretty_json, sha256_bytes
 from .web.app import create_app
 
 DEFAULT_DB = Path("build/ledger.sqlite")
@@ -81,6 +82,33 @@ def command_profile(args: argparse.Namespace) -> int:
         print(text, end="" if text.endswith("\n") else "\n")
     return 0
 
+def command_accrue_balances(args: argparse.Namespace) -> int:
+    copybook_sha = None
+    if args.copybook is not None:
+        try:
+            copybook_sha = sha256_bytes(args.copybook.read_bytes())
+        except OSError as exc:
+            raise InputError(f"cannot read copybook {args.copybook}: {exc}", code="IO001") from exc
+    report = build_accrual_report(
+        manifest_path=args.manifest, db_path=args.db,
+        start=_parse_cli_date(args.start, "--start"), end=_parse_cli_date(args.end, "--end"),
+        route=args.route, as_of=parse_now(args.as_of) if args.as_of else None,
+        copybook_sha256=copybook_sha)
+    text = pretty_json(report)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(text, encoding="utf-8")
+    else:
+        print(text, end="")
+    return 0
+
+def _parse_cli_date(value: str, flag: str):
+    from datetime import datetime
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise InputError(f"{flag} must use YYYY-MM-DD, got {value!r}", code="CLI001") from exc
+
 def command_serve(args: argparse.Namespace) -> int:
     if not 1 <= args.port <= 65535:
         raise InputError("--port must be between 1 and 65535", code="CLI001")
@@ -118,6 +146,23 @@ def build_parser() -> CliParser:
     reprocess.add_argument("--out", type=Path, help="new run artifact root")
     _add_common(reprocess)
     reprocess.set_defaults(func=command_reprocess)
+    accrue = sub.add_parser(
+        "accrue-balances",
+        help="offline multi-day balance accrual from completed runs and a local revision manifest")
+    accrue.add_argument("--manifest", type=Path, required=True,
+                        help="JSON revision manifest (run_id, business_date, expected_accounts, "
+                             "supersedes_run_id, authorized_at, close_at per entry)")
+    accrue.add_argument("--start", required=True, help="period start YYYY-MM-DD (inclusive)")
+    accrue.add_argument("--end", required=True, help="period end YYYY-MM-DD (exclusive)")
+    accrue.add_argument("--route", choices=["historical", "restatement"], default="historical",
+                        help="historical freezes each chain at its close_at; restatement follows "
+                             "the revision chain up to --as-of")
+    accrue.add_argument("--as-of", help="restatement authorization cutoff ISO-8601 (restatement only)")
+    accrue.add_argument("--copybook", type=Path,
+                        help="balance copybook; when given, every run must match its SHA-256")
+    accrue.add_argument("--output", type=Path, help="write report JSON here instead of stdout")
+    _add_common(accrue)
+    accrue.set_defaults(func=command_accrue_balances)
     profile = sub.add_parser("profile", help="print or copy a run's field profile JSON")
     profile.add_argument("--run-id", required=True)
     profile.add_argument("--db", type=Path, default=DEFAULT_DB)

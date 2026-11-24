@@ -1,0 +1,21 @@
+{
+  "close_at": "2026-03-01T00:00:00Z",
+  "entries": [
+    {
+      "run_id": "run-replace-with-real-ledger-run-id-001",
+      "business_date": "20260228",
+      "expected_accounts": ["ACCT00000001"],
+      "supersedes_run_id": null,
+      "authorized_at": "2026-02-27T00:00:00Z",
+      "close_at": "2026-03-01T00:00:00Z"
+    },
+    {
+      "run_id": "run-replace-with-real-ledger-run-id-002",
+      "business_date": "20260228",
+      "expected_accounts": ["ACCT00000001"],
+      "supersedes_run_id": "run-replace-with-real-ledger-run-id-001",
+      "authorized_at": "2026-03-02T00:00:00Z",
+      "close_at": "2026-03-01T00:00:00Z"
+    }
+  ]
+}

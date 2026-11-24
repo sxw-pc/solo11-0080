@@ -12,7 +12,7 @@
 ```bash
 python -m pip install -e .
 make demo          # 六个场景走完 编译 -> 解码 -> 校验 -> 台账 -> 报告
-pytest -q          # 84 个测试，含黄金样例与逐字节复现检查
+pytest -q          # 合成回归，含黄金样例、逐字节复现与离线计息检查
 python -m copybook_kit.cli serve --port 5000
 ```
 
@@ -42,6 +42,9 @@ copybook-kit run --input fixtures/data/customer_normal.dat \
   --db build/ledger.sqlite --out build/runs --now 2026-01-01T00:00:00Z
 copybook-kit resume --run-id <run-id> --db build/ledger.sqlite
 copybook-kit reprocess --run-id <run-id> --rules fixtures/rules/negative_rules.yaml
+copybook-kit accrue-balances --manifest fixtures/revision_manifest.example.json \
+  --db build/ledger.sqlite --start 2026-02-28 --end 2026-03-05 \
+  --route historical
 copybook-kit profile --run-id <run-id> --db build/ledger.sqlite
 copybook-kit serve --db build/ledger.sqlite --port 5000
 copybook-kit demo
@@ -51,6 +54,29 @@ copybook-kit demo
 warnings 与 errors；存在任何 CB 错误时退出码为 2。运行退出码：`0` 完成，
 `3` 文件级失败（截断、约束不满足），`2` CLI/契约/IO 错误。
 
+## 离线多日计息与修订权威
+
+`accrue-balances` 不重新摄入文件，只读取已完成运行的台账与 `accepted.jsonl` /
+`rejects.jsonl`，原运行及其产物始终只读。版本权威只来自显式的本地修订清单
+（示例见 `fixtures/revision_manifest.example.json`）：每条给出 `run_id`、该文件的
+`business_date`（须与记录 `BOOK-DATE` 一致）、预期 `ACCOUNT-ID` 清单、被替代
+`supersedes_run_id`、`authorized_at` 与 `close_at`。同账户同日期的两个独立 run
+若没有可核对的替代链即视为冲突，不按文件名、运行创建时间或清单顺序猜版本。
+
+- **原账路线（`--route historical`，默认）**：以关账时刻之前已授权的版本冻结当时
+  每账户每天的状态；后来的替代文件只进入差异披露，不改动旧结论。
+- **重述路线（`--route restatement --as-of <ISO-8601>`）**：按报告指定的后续授权
+  截止时刻沿修订链选择最新有效版本，重算受影响日期起的利息，并同时输出旧/新结果
+  与可追溯差额；两条路线各自带独立来源标签，重述不覆盖原账。
+
+期间为半开日区间 `[start, end)`；某日快照自当日生效至下一快照前一日，每日金额为
+`AMOUNT × RATE / 365`，跨日用 `Decimal` 全精度相加，仅在报告最终按 half-even
+舍入到分，绝不逐日舍入，也不使用 float。拒绝记录、`max-records` 前缀、文件级失败、
+输入/规则/`accepted.jsonl` 摘要不匹配都会让受影响账户/日期进入未知区间；拒绝记录
+无法可靠识别 `ACCOUNT-ID` 时该文件全部预期账户在该日期未知，缺行不会被解释为零
+余额。修订链分叉/成环或开始日无已授权状态时输出分段未知且不产生整期确定金额，
+无冲突的账户仍可独立结算。
+
 ## 目录
 
 ```
@@ -58,11 +84,11 @@ copybook_kit/
   copybook/   固定格式词法、子句解析、布局计算
   decode/     DISPLAY / 带符号 / COMP-3 解码与稳定诊断
   rules/      规则 schema、字段检查、记录/文件引擎
-  pipeline/   读取、处理、幂等运行、断点、画像、报告
+  pipeline/   读取、处理、幂等运行、断点、画像、报告、离线计息（accrual.py）
   store/      SQLite 台账 schema 与查询
   report/     Markdown / 自包含 HTML
   web/        127.0.0.1 只读控制台
-fixtures/     三个 copybook、四份规则、合成数据与确定性生成器
+fixtures/     三个 copybook、四份规则、合成数据、确定性生成器、修订清单示例
 docs/         子集、规则契约、输出与台账说明
 tests/        解析、布局、解码、规则、管道、台账、恢复、报告、Web、CLI、黄金样例
 ```
